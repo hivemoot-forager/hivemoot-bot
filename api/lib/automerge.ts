@@ -216,7 +216,7 @@ export async function evaluateAutomerge(
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             const warnMsg = `[PR #${ref.prNumber}] Failed to fetch PR node ID for auto-merge disable: ${msg}`;
-            log?.warn ? log.warn(warnMsg) : logger.warn(warnMsg);
+            if (log?.warn) { log.warn(warnMsg); } else { logger.warn(warnMsg); }
           }
         }
         if (capturedNodeId) {
@@ -230,7 +230,7 @@ export async function evaluateAutomerge(
             // Treat as a no-op — the label is already removed, so state is consistent.
             if (!msg.includes("PullRequestAutoMergeNotEnabled")) {
               const warnMsg = `[PR #${ref.prNumber}] Failed to disable GitHub auto-merge: ${msg}`;
-              log?.warn ? log.warn(warnMsg) : logger.warn(warnMsg);
+              if (log?.warn) { log.warn(warnMsg); } else { logger.warn(warnMsg); }
             }
           }
         }
@@ -303,7 +303,7 @@ export async function evaluateAutomerge(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const warnMsg = `[PR #${ref.prNumber}] Failed to fetch PR node ID for auto-merge: ${msg}`;
-        log?.warn ? log.warn(warnMsg) : logger.warn(warnMsg);
+        if (log?.warn) { log.warn(warnMsg); } else { logger.warn(warnMsg); }
       }
     }
 
