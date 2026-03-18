@@ -1086,4 +1086,95 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       expect.stringContaining("Failed to disable GitHub auto-merge")
     );
   });
+
+  it("calls disablePullRequestAutoMerge on the mergeable:false gate when dryRun is false", async () => {
+    const config = makeConfig({ dryRun: false });
+    const nodeId = "PR_kwConflict";
+    const prs = createMockPROperations({
+      getLabels: vi.fn().mockResolvedValue([LABELS.AUTOMERGE]),
+    });
+    const mockGraphQL = { graphql: vi.fn().mockResolvedValue({}) };
+
+    const result = await evaluateAutomerge({
+      prs,
+      ref: baseRef,
+      config,
+      trustedReviewers,
+      graphql: mockGraphQL,
+      nodeId,
+      mergeable: false,
+    });
+
+    expect(result).toEqual({ action: "unlabeled", reason: "PR has merge conflicts" });
+    expect(prs.removeLabel).toHaveBeenCalledWith(baseRef, LABELS.AUTOMERGE);
+    expect(mockGraphQL.graphql).toHaveBeenCalledWith(
+      expect.stringContaining("disablePullRequestAutoMerge"),
+      { pullRequestId: nodeId }
+    );
+  });
+
+  it("warns and skips disable mutation when prs.get() fails in the disable path", async () => {
+    const config = makeConfig({ dryRun: false });
+    const warnLog = vi.fn();
+    const prs = createMockPROperations({
+      listFiles: vi.fn().mockResolvedValue([makeFile("src/main.ts", 5)]),
+      getLabels: vi.fn().mockResolvedValue([LABELS.AUTOMERGE]),
+      get: vi.fn().mockRejectedValue(new Error("rate limit")),
+    });
+    const mockGraphQL = { graphql: vi.fn().mockResolvedValue({}) };
+
+    const result = await evaluateAutomerge({
+      prs,
+      ref: baseRef,
+      config,
+      trustedReviewers,
+      graphql: mockGraphQL,
+      log: { info: vi.fn(), warn: warnLog },
+    });
+
+    expect(result).toEqual({ action: "unlabeled", reason: "file not allowed: src/main.ts" });
+    expect(warnLog).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to fetch PR node ID for auto-merge disable")
+    );
+    // Disable mutation must not be called when nodeId could not be fetched
+    expect(mockGraphQL.graphql).not.toHaveBeenCalledWith(
+      expect.stringContaining("disablePullRequestAutoMerge"),
+      expect.anything()
+    );
+  });
+
+  it("passes commitHeadline and commitBody for squash even when mergeMethod is rebase in config", async () => {
+    // Verify: configuring commitHeadline with rebase still calls the mutation correctly.
+    // GitHub ignores commitHeadline/commitBody for REBASE — they pass through as null
+    // because the config parser rejects them for rebase (no, actually the parser stores them).
+    // This test documents the mutation call shape when rebase + headline are both configured.
+    const config = makeConfig({
+      dryRun: false,
+      mergeMethod: "rebase",
+      commitHeadline: "Override headline",
+      commitBody: "Override body",
+    });
+    const prs = makeEligiblePROperations();
+    const mockGraphQL = { graphql: vi.fn().mockResolvedValue({}) };
+
+    await evaluateAutomerge({
+      prs,
+      ref: baseRef,
+      config,
+      trustedReviewers,
+      graphql: mockGraphQL,
+      mergeable: true,
+    });
+
+    // REBASE method — headline and body are passed through to the API as configured
+    // (GitHub silently ignores them for rebase; the mutation call itself is valid)
+    expect(mockGraphQL.graphql).toHaveBeenCalledWith(
+      expect.stringContaining("enablePullRequestAutoMerge"),
+      expect.objectContaining({
+        mergeMethod: "REBASE",
+        commitHeadline: "Override headline",
+        commitBody: "Override body",
+      })
+    );
+  });
 });

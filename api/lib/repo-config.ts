@@ -1208,8 +1208,31 @@ function parseAutomergeConfig(
   }
 
   // Parse optional commit message fields (only used when dryRun: false and mergeMethod is squash/merge)
-  const commitHeadline = typeof obj.commitHeadline === "string" ? obj.commitHeadline : undefined;
-  const commitBody = typeof obj.commitBody === "string" ? obj.commitBody : undefined;
+  let commitHeadline: string | undefined;
+  if (obj.commitHeadline !== undefined && obj.commitHeadline !== null) {
+    if (typeof obj.commitHeadline === "string" && obj.commitHeadline.length > 0) {
+      commitHeadline = obj.commitHeadline;
+    } else if (typeof obj.commitHeadline !== "string") {
+      logger.warn(
+        `[${repoFullName}] automerge.commitHeadline must be a non-empty string. Ignoring.`
+      );
+    } else {
+      // empty string — meaningless commit subject
+      logger.warn(
+        `[${repoFullName}] automerge.commitHeadline is an empty string. Ignoring.`
+      );
+    }
+  }
+  let commitBody: string | undefined;
+  if (obj.commitBody !== undefined && obj.commitBody !== null) {
+    if (typeof obj.commitBody === "string") {
+      commitBody = obj.commitBody; // empty string is valid — clears the body
+    } else {
+      logger.warn(
+        `[${repoFullName}] automerge.commitBody must be a string. Ignoring.`
+      );
+    }
+  }
 
   return {
     dryRun,

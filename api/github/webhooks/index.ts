@@ -221,6 +221,7 @@ export function app(probotApp: Probot): void {
           ref: { owner, repo, prNumber: number },
           config: repoConfig.governance.pr.automerge,
           trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+          nodeId: context.payload.pull_request.node_id,
           draft: context.payload.pull_request.draft,
           mergeable: context.payload.pull_request.mergeable,
           log: context.log,
@@ -311,6 +312,7 @@ export function app(probotApp: Probot): void {
           ref: prRef,
           config: repoConfig.governance.pr.automerge,
           trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+          nodeId: context.payload.pull_request.node_id,
           draft: context.payload.pull_request.draft,
           mergeable: context.payload.pull_request.mergeable,
           log: context.log,
@@ -363,6 +365,7 @@ export function app(probotApp: Probot): void {
           ref: prRef,
           config: repoConfig.governance.pr.automerge,
           trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+          nodeId: context.payload.pull_request.node_id,
           currentLabels,
           draft: false,
           mergeable: context.payload.pull_request.mergeable,
@@ -716,15 +719,18 @@ export function app(probotApp: Probot): void {
 
         // SimplePullRequest omits mergeable; fetch from REST so the conflict gate fires correctly.
         let reviewPRMergeable: boolean | null | undefined;
+        let reviewPRNodeId: string | undefined;
         if (repoConfig.governance.pr.automerge) {
           const prState = await prs.get({ owner, repo, prNumber: number });
           reviewPRMergeable = prState.mergeable;
+          reviewPRNodeId = prState.nodeId;
         }
         await evaluateAutomerge({
           prs,
           ref: { owner, repo, prNumber: number },
           config: repoConfig.governance.pr.automerge,
           trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+          nodeId: reviewPRNodeId,
           draft: context.payload.pull_request.draft,
           mergeable: reviewPRMergeable,
           log: context.log,
@@ -768,15 +774,18 @@ export function app(probotApp: Probot): void {
 
         // SimplePullRequest omits mergeable; fetch from REST so the conflict gate fires correctly.
         let dismissedPRMergeable: boolean | null | undefined;
+        let dismissedPRNodeId: string | undefined;
         if (repoConfig.governance.pr.automerge) {
           const prState = await prs.get({ owner, repo, prNumber: number });
           dismissedPRMergeable = prState.mergeable;
+          dismissedPRNodeId = prState.nodeId;
         }
         await evaluateAutomerge({
           prs,
           ref: { owner, repo, prNumber: number },
           config: repoConfig.governance.pr.automerge,
           trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+          nodeId: dismissedPRNodeId,
           draft: context.payload.pull_request.draft,
           mergeable: dismissedPRMergeable,
           log: context.log,
@@ -868,16 +877,19 @@ export function app(probotApp: Probot): void {
           // automerge gates can fire correctly on CI completion events.
           let prDraft: boolean | undefined;
           let prMergeable: boolean | null | undefined;
+          let prNodeId: string | undefined;
           if (repoConfig.governance.pr.automerge) {
             const prState = await prs.get(prRef);
             prDraft = prState.draft;
             prMergeable = prState.mergeable;
+            prNodeId = prState.nodeId;
           }
           await evaluateAutomerge({
             prs,
             ref: prRef,
             config: repoConfig.governance.pr.automerge,
             trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+            nodeId: prNodeId,
             headSha,
             draft: prDraft,
             mergeable: prMergeable,
@@ -942,16 +954,19 @@ export function app(probotApp: Probot): void {
           // automerge gates can fire correctly on CI completion events.
           let prDraft: boolean | undefined;
           let prMergeable: boolean | null | undefined;
+          let checkRunPRNodeId: string | undefined;
           if (repoConfig.governance.pr.automerge) {
             const prState = await prs.get(prRef);
             prDraft = prState.draft;
             prMergeable = prState.mergeable;
+            checkRunPRNodeId = prState.nodeId;
           }
           await evaluateAutomerge({
             prs,
             ref: prRef,
             config: repoConfig.governance.pr.automerge,
             trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+            nodeId: checkRunPRNodeId,
             currentLabels,
             headSha,
             draft: prDraft,
@@ -1045,15 +1060,18 @@ export function app(probotApp: Probot): void {
           });
           // pulls.list omits mergeable; fetch from REST so the conflict gate fires correctly.
           let statusPRMergeable: boolean | null | undefined;
+          let statusPRNodeId: string | undefined;
           if (repoConfig.governance.pr.automerge) {
             const prState = await prs.get({ owner, repo, prNumber: pr.number });
             statusPRMergeable = prState.mergeable;
+            statusPRNodeId = prState.nodeId;
           }
           await evaluateAutomerge({
             prs,
             ref: { owner, repo, prNumber: pr.number },
             config: repoConfig.governance.pr.automerge,
             trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+            nodeId: statusPRNodeId,
             currentLabels,
             headSha: sha,
             draft: pr.draft,

@@ -516,8 +516,9 @@ interface DisableAutoMergeResponse {
  * Called when the `hivemoot:automerge` label is removed (eligibility lost)
  * and `dryRun: false`. This reverts any previously enabled auto-merge state.
  *
- * Safe to call even if auto-merge is not currently enabled — GitHub treats
- * disabling a non-enabled auto-merge as a no-op.
+ * Note: GitHub throws `PullRequestAutoMergeNotEnabled` when auto-merge was
+ * never activated on the PR (e.g., enable mutation previously failed, or
+ * the repo was in dryRun mode). Callers should treat this error as a no-op.
  *
  * @param client - GraphQL client
  * @param pullRequestId - PR node ID (e.g. "PR_kwABCDEF")

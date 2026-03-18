@@ -2600,6 +2600,100 @@ governance:
       });
     });
 
+    describe("automerge.commitHeadline and automerge.commitBody", () => {
+      it("should parse valid commitHeadline and commitBody strings", async () => {
+        const configYaml = `
+version: 1
+governance:
+  pr:
+    trustedReviewers: [alice]
+    automerge:
+      dryRun: false
+      allowedPaths: ["**/*.md"]
+      commitHeadline: "Auto-merge: {{title}}"
+      commitBody: "Merged via hivemoot automerge."
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.automerge!.commitHeadline).toBe("Auto-merge: {{title}}");
+        expect(config!.governance.pr!.automerge!.commitBody).toBe("Merged via hivemoot automerge.");
+      });
+
+      it("should accept empty string for commitBody (clears the body)", async () => {
+        const configYaml = `
+version: 1
+governance:
+  pr:
+    trustedReviewers: [alice]
+    automerge:
+      dryRun: false
+      allowedPaths: ["**/*.md"]
+      commitBody: ""
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.automerge!.commitBody).toBe("");
+      });
+
+      it("should ignore empty string commitHeadline and leave it undefined", async () => {
+        const configYaml = `
+version: 1
+governance:
+  pr:
+    trustedReviewers: [alice]
+    automerge:
+      dryRun: false
+      allowedPaths: ["**/*.md"]
+      commitHeadline: ""
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.automerge!.commitHeadline).toBeUndefined();
+      });
+
+      it("should ignore non-string commitHeadline and leave it undefined", async () => {
+        const configYaml = `
+version: 1
+governance:
+  pr:
+    trustedReviewers: [alice]
+    automerge:
+      dryRun: false
+      allowedPaths: ["**/*.md"]
+      commitHeadline: 42
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.automerge!.commitHeadline).toBeUndefined();
+      });
+
+      it("should ignore non-string commitBody and leave it undefined", async () => {
+        const configYaml = `
+version: 1
+governance:
+  pr:
+    trustedReviewers: [alice]
+    automerge:
+      dryRun: false
+      allowedPaths: ["**/*.md"]
+      commitBody: true
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.automerge!.commitBody).toBeUndefined();
+      });
+    });
+
     describe("proposals.discussion.autoGather", () => {
       it("should default to disabled when not configured", async () => {
         const configYaml = `version: 1\n`;

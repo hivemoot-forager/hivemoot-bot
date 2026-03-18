@@ -22,6 +22,7 @@ import type { PRRef } from "./types.js";
 import type { PROperations } from "./pr-operations.js";
 import type { AutomergeConfig } from "./repo-config.js";
 import { isCIPassing } from "./merge-readiness.js";
+import { logger } from "./logger.js";
 import type { GraphQLClient } from "./graphql-queries.js";
 import {
   enablePullRequestAutoMerge,
@@ -209,19 +210,28 @@ export async function evaluateAutomerge(
 
       // Phase 2: disable GitHub native auto-merge when dryRun is false
       if (!config.dryRun && params.graphql) {
-        try {
-          if (!capturedNodeId) {
+        if (!capturedNodeId) {
+          try {
             capturedNodeId = (await prs.get(ref)).nodeId;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const warnMsg = `[PR #${ref.prNumber}] Failed to fetch PR node ID for auto-merge disable: ${msg}`;
+            log?.warn ? log.warn(warnMsg) : logger.warn(warnMsg);
           }
-          await disablePullRequestAutoMerge(params.graphql, capturedNodeId);
-          log?.info(`[PR #${ref.prNumber}] Disabled GitHub native auto-merge`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          // PullRequestAutoMergeNotEnabled means auto-merge was never activated
-          // (e.g., enable mutation failed earlier, or repo was in dryRun mode).
-          // Treat as a no-op — the label is already removed, so state is consistent.
-          if (!msg.includes("PullRequestAutoMergeNotEnabled")) {
-            log?.warn?.(`[PR #${ref.prNumber}] Failed to disable GitHub auto-merge: ${msg}`);
+        }
+        if (capturedNodeId) {
+          try {
+            await disablePullRequestAutoMerge(params.graphql, capturedNodeId);
+            log?.info(`[PR #${ref.prNumber}] Disabled GitHub native auto-merge`);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            // PullRequestAutoMergeNotEnabled means auto-merge was never activated
+            // (e.g., enable mutation failed earlier, or repo was in dryRun mode).
+            // Treat as a no-op — the label is already removed, so state is consistent.
+            if (!msg.includes("PullRequestAutoMergeNotEnabled")) {
+              const warnMsg = `[PR #${ref.prNumber}] Failed to disable GitHub auto-merge: ${msg}`;
+              log?.warn ? log.warn(warnMsg) : logger.warn(warnMsg);
+            }
           }
         }
       }
@@ -292,7 +302,8 @@ export async function evaluateAutomerge(
         capturedNodeId = (await prs.get(ref)).nodeId;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        log?.warn?.(`[PR #${ref.prNumber}] Failed to fetch PR node ID for auto-merge: ${msg}`);
+        const warnMsg = `[PR #${ref.prNumber}] Failed to fetch PR node ID for auto-merge: ${msg}`;
+        log?.warn ? log.warn(warnMsg) : logger.warn(warnMsg);
       }
     }
 
