@@ -2466,6 +2466,100 @@ describe("Queen Bot", () => {
 
       expect(disablePullRequestAutoMerge).toHaveBeenCalledWith(expect.anything(), "PR_node_draft");
     });
+
+    it("warns when disablePullRequestAutoMerge throws on pull_request.synchronize (Phase 2 active)", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(getLinkedIssues).mockResolvedValue([]);
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(phase2Config as any);
+      vi.mocked(disablePullRequestAutoMerge).mockRejectedValueOnce(new Error("network failure"));
+
+      const log = mkLog();
+      await handlers.get("pull_request.synchronize")!({
+        octokit: mkOctokit(),
+        log,
+        payload: {
+          pull_request: {
+            number: 12,
+            node_id: "PR_node_sync_err",
+            base: { ref: "main" },
+            labels: [{ name: LABELS.AUTOMERGE }],
+          },
+          repository: testRepo,
+        },
+      });
+
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("Failed to disable GitHub auto-merge on synchronize"));
+    });
+
+    it("silently ignores PullRequestAutoMergeNotEnabled on pull_request.synchronize (Phase 2 active)", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(getLinkedIssues).mockResolvedValue([]);
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(phase2Config as any);
+      vi.mocked(disablePullRequestAutoMerge).mockRejectedValueOnce(new Error("PullRequestAutoMergeNotEnabled"));
+
+      const log = mkLog();
+      await handlers.get("pull_request.synchronize")!({
+        octokit: mkOctokit(),
+        log,
+        payload: {
+          pull_request: {
+            number: 13,
+            node_id: "PR_node_sync_notEnabled",
+            base: { ref: "main" },
+            labels: [{ name: LABELS.AUTOMERGE }],
+          },
+          repository: testRepo,
+        },
+      });
+
+      expect(log.warn).not.toHaveBeenCalled();
+    });
+
+    it("warns when disablePullRequestAutoMerge throws on pull_request.converted_to_draft (Phase 2 active)", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(phase2Config as any);
+      vi.mocked(disablePullRequestAutoMerge).mockRejectedValueOnce(new Error("network failure"));
+
+      const log = mkLog();
+      await handlers.get("pull_request.converted_to_draft")!({
+        octokit: mkOctokit(),
+        log,
+        payload: {
+          pull_request: {
+            number: 14,
+            node_id: "PR_node_draft_err",
+            draft: true,
+            labels: [{ name: LABELS.AUTOMERGE }],
+          },
+          repository: testRepo,
+        },
+      });
+
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("Failed to disable GitHub auto-merge on converted_to_draft"));
+    });
+
+    it("silently ignores PullRequestAutoMergeNotEnabled on pull_request.converted_to_draft (Phase 2 active)", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(phase2Config as any);
+      vi.mocked(disablePullRequestAutoMerge).mockRejectedValueOnce(new Error("PullRequestAutoMergeNotEnabled"));
+
+      const log = mkLog();
+      await handlers.get("pull_request.converted_to_draft")!({
+        octokit: mkOctokit(),
+        log,
+        payload: {
+          pull_request: {
+            number: 15,
+            node_id: "PR_node_draft_notEnabled",
+            draft: true,
+            labels: [{ name: LABELS.AUTOMERGE }],
+          },
+          repository: testRepo,
+        },
+      });
+
+      expect(log.warn).not.toHaveBeenCalled();
+    });
   });
 
   describe("Message Templates", () => {

@@ -319,7 +319,8 @@ export async function evaluateAutomerge(
         const hint = msg.includes("PullRequestAutoMergeNotAllowed")
           ? " Verify the repository has branch protection rules configured."
           : "";
-        log?.warn?.(`[PR #${ref.prNumber}] Failed to enable GitHub auto-merge: ${msg}.${hint}`);
+        const warnMsg = `[PR #${ref.prNumber}] Failed to enable GitHub auto-merge: ${msg}.${hint}`;
+        if (log?.warn) { log.warn(warnMsg); } else { logger.warn(warnMsg); }
       }
     }
   }
