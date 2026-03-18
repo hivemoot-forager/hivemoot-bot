@@ -202,13 +202,12 @@ export async function evaluateAutomerge(
   // Seeded from pre-fetched webhook payload value when available.
   let capturedNodeId: string | undefined = params.nodeId;
 
-  // Helper: remove label and, when Phase 2 is active, disable native auto-merge
+  // Helper: remove label and, when Phase 2 is active, disable native auto-merge.
+  // Phase 2 disable runs BEFORE label removal: if the GraphQL call fails unexpectedly,
+  // the label is preserved so future reconciliations can retry the disable.
   const removeIfLabeled = async (reason: string): Promise<AutomergeResult> => {
     if (hasAutomerge) {
-      await prs.removeLabel(ref, LABELS.AUTOMERGE);
-      log?.info(`[PR #${ref.prNumber}] Removed automerge: ${reason}`);
-
-      // Phase 2: disable GitHub native auto-merge when dryRun is false
+      // Phase 2: disable GitHub native auto-merge BEFORE removing the label
       if (!config.dryRun && params.graphql) {
         if (!capturedNodeId) {
           try {
@@ -225,17 +224,21 @@ export async function evaluateAutomerge(
             log?.info(`[PR #${ref.prNumber}] Disabled GitHub native auto-merge`);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            // PullRequestAutoMergeNotEnabled means auto-merge was never activated
-            // (e.g., enable mutation failed earlier, or repo was in dryRun mode).
-            // Treat as a no-op — the label is already removed, so state is consistent.
-            if (!msg.includes("PullRequestAutoMergeNotEnabled")) {
-              const warnMsg = `[PR #${ref.prNumber}] Failed to disable GitHub auto-merge: ${msg}`;
+            if (msg.includes("PullRequestAutoMergeNotEnabled")) {
+              // auto-merge was never activated (e.g., enable failed earlier or dryRun mode).
+              // Treat as a no-op and proceed with label removal.
+            } else {
+              // Unexpected failure — keep the label so future reconciliations can retry.
+              const warnMsg = `[PR #${ref.prNumber}] Failed to disable GitHub auto-merge, retaining label for retry: ${msg}`;
               if (log?.warn) { log.warn(warnMsg); } else { logger.warn(warnMsg); }
+              return { action: "noop", labeled: true };
             }
           }
         }
       }
 
+      await prs.removeLabel(ref, LABELS.AUTOMERGE);
+      log?.info(`[PR #${ref.prNumber}] Removed automerge: ${reason}`);
       return { action: "unlabeled", reason };
     }
     return { action: "noop", labeled: false };

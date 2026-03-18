@@ -1061,7 +1061,10 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     expect(warnLog).not.toHaveBeenCalled();
   });
 
-  it("warns when disablePullRequestAutoMerge fails with unexpected error", async () => {
+  it("retains label and warns when disablePullRequestAutoMerge fails with unexpected error", async () => {
+    // Unexpected disable failure must keep the label so future reconciliations can retry.
+    // Without this invariant, a transient GraphQL error would leave GitHub auto-merge armed
+    // with no retry signal (label already gone, hasAutomerge === false on next eval).
     const config = makeConfig({ dryRun: false });
     const prs = createMockPROperations({
       listFiles: vi.fn().mockResolvedValue([makeFile("src/main.ts", 5)]),
@@ -1081,7 +1084,9 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       log: { info: vi.fn(), warn: warnLog },
     });
 
-    expect(result).toEqual({ action: "unlabeled", reason: "file not allowed: src/main.ts" });
+    // Label retained — noop, not unlabeled
+    expect(result).toEqual({ action: "noop", labeled: true });
+    expect(prs.removeLabel).not.toHaveBeenCalledWith(baseRef, LABELS.AUTOMERGE);
     expect(warnLog).toHaveBeenCalledWith(
       expect.stringContaining("Failed to disable GitHub auto-merge")
     );
