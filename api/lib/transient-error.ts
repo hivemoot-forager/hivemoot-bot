@@ -6,6 +6,7 @@
  * or validation failure.
  */
 
+import { GraphqlResponseError } from "@octokit/graphql";
 import { getErrorStatus } from "./github-client.js";
 
 /**
@@ -38,4 +39,23 @@ export function isTransientError(error: unknown): boolean {
   }
   const status = getErrorStatus(error);
   return status !== null && (status === 429 || status >= 500);
+}
+
+/**
+ * Determine whether a GraphQL error means auto-merge was not active on the PR.
+ *
+ * GitHub returns `GraphqlResponseError` with `errors[].type === "UNPROCESSABLE"`
+ * and a human-readable message containing "not enabled" when
+ * `disablePullRequestAutoMerge` is called on a PR that has no active auto-merge.
+ * The type identifier ("PullRequestAutoMergeNotEnabled") lives in `errors[].type`
+ * and does NOT appear in `.message`, so string-matching `.message` silently fails.
+ */
+export function isAutoMergeNotEnabledError(error: unknown): boolean {
+  if (!(error instanceof GraphqlResponseError)) return false;
+  return (
+    error.errors?.some(
+      (e) =>
+        e.type === "UNPROCESSABLE" && /not enabled/i.test(e.message ?? "")
+    ) ?? false
+  );
 }

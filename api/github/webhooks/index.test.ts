@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { GraphqlResponseError } from "@octokit/graphql";
 import { GovernanceService } from "../../lib/governance.js";
 import { createIssueOperations } from "../../lib/github-client.js";
 import { getLinkedIssues, getOpenPRsForIssue, disablePullRequestAutoMerge } from "../../lib/graphql-queries.js";
@@ -2495,7 +2496,13 @@ describe("Queen Bot", () => {
       const { handlers } = createWebhookHarness();
       vi.mocked(getLinkedIssues).mockResolvedValue([]);
       vi.mocked(loadRepositoryConfig).mockResolvedValue(phase2Config as any);
-      vi.mocked(disablePullRequestAutoMerge).mockRejectedValueOnce(new Error("PullRequestAutoMergeNotEnabled"));
+      vi.mocked(disablePullRequestAutoMerge).mockRejectedValueOnce(
+        new GraphqlResponseError(
+          { url: "https://api.github.com/graphql" },
+          {},
+          { data: null, errors: [{ message: "Pull request Auto merge is not enabled.", type: "UNPROCESSABLE" }] }
+        )
+      );
 
       const log = mkLog();
       await handlers.get("pull_request.synchronize")!({
@@ -2541,7 +2548,13 @@ describe("Queen Bot", () => {
     it("silently ignores PullRequestAutoMergeNotEnabled on pull_request.converted_to_draft (Phase 2 active)", async () => {
       const { handlers } = createWebhookHarness();
       vi.mocked(loadRepositoryConfig).mockResolvedValue(phase2Config as any);
-      vi.mocked(disablePullRequestAutoMerge).mockRejectedValueOnce(new Error("PullRequestAutoMergeNotEnabled"));
+      vi.mocked(disablePullRequestAutoMerge).mockRejectedValueOnce(
+        new GraphqlResponseError(
+          { url: "https://api.github.com/graphql" },
+          {},
+          { data: null, errors: [{ message: "Pull request Auto merge is not enabled.", type: "UNPROCESSABLE" }] }
+        )
+      );
 
       const log = mkLog();
       await handlers.get("pull_request.converted_to_draft")!({

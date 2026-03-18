@@ -1,7 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { GraphqlResponseError } from "@octokit/graphql";
 import { isFileAllowed, classifyFiles, evaluateAutomerge } from "./automerge.js";
 import type { AutomergeConfig } from "./repo-config.js";
 import { LABELS } from "../config.js";
+
+/** Build a GraphqlResponseError that matches what GitHub returns when auto-merge is not enabled. */
+function makeAutoMergeNotEnabledError(): GraphqlResponseError<null> {
+  return new GraphqlResponseError(
+    { url: "https://api.github.com/graphql" },
+    {},
+    {
+      data: null,
+      errors: [{ message: "Pull request Auto merge is not enabled.", type: "UNPROCESSABLE" }],
+    }
+  );
+}
 
 // ───────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -1042,7 +1055,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     });
     const warnLog = vi.fn();
     const mockGraphQL = {
-      graphql: vi.fn().mockRejectedValue(new Error("PullRequestAutoMergeNotEnabled")),
+      graphql: vi.fn().mockRejectedValue(makeAutoMergeNotEnabledError()),
     };
 
     const result = await evaluateAutomerge({

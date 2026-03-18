@@ -19,6 +19,7 @@ import {
   getLinkedIssues,
   disablePullRequestAutoMerge,
 } from "../../lib/graphql-queries.js";
+import { isAutoMergeNotEnabledError } from "../../lib/transient-error.js";
 import { hasSameRepoClosingKeywordRef } from "../../lib/closing-keywords.js";
 import { filterByLabel } from "../../lib/types.js";
 import { validateEnv, getAppId } from "../../lib/env-validation.js";
@@ -276,8 +277,8 @@ export function app(probotApp: Probot): void {
         try {
           await disablePullRequestAutoMerge(context.octokit, context.payload.pull_request.node_id);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (!msg.includes("PullRequestAutoMergeNotEnabled")) {
+          if (!isAutoMergeNotEnabledError(err)) {
+            const msg = err instanceof Error ? err.message : String(err);
             context.log.warn(`[PR #${number}] Failed to disable GitHub auto-merge on synchronize: ${msg}`);
           }
         }
@@ -419,8 +420,8 @@ export function app(probotApp: Probot): void {
           try {
             await disablePullRequestAutoMerge(context.octokit, context.payload.pull_request.node_id);
           } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            if (!msg.includes("PullRequestAutoMergeNotEnabled")) {
+            if (!isAutoMergeNotEnabledError(err)) {
+              const msg = err instanceof Error ? err.message : String(err);
               context.log.warn(`[PR #${number}] Failed to disable GitHub auto-merge on converted_to_draft: ${msg}`);
             }
           }

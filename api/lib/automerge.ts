@@ -28,6 +28,7 @@ import {
   enablePullRequestAutoMerge,
   disablePullRequestAutoMerge,
 } from "./graphql-queries.js";
+import { isAutoMergeNotEnabledError } from "./transient-error.js";
 
 // ───────────────────────────────────────────────────────────────────────────────
 // Types
@@ -223,12 +224,12 @@ export async function evaluateAutomerge(
             await disablePullRequestAutoMerge(params.graphql, capturedNodeId);
             log?.info(`[PR #${ref.prNumber}] Disabled GitHub native auto-merge`);
           } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            if (msg.includes("PullRequestAutoMergeNotEnabled")) {
+            if (isAutoMergeNotEnabledError(err)) {
               // auto-merge was never activated (e.g., enable failed earlier or dryRun mode).
               // Treat as a no-op and proceed with label removal.
             } else {
               // Unexpected failure — keep the label so future reconciliations can retry.
+              const msg = err instanceof Error ? err.message : String(err);
               const warnMsg = `[PR #${ref.prNumber}] Failed to disable GitHub auto-merge, retaining label for retry: ${msg}`;
               if (log?.warn) { log.warn(warnMsg); } else { logger.warn(warnMsg); }
               return { action: "noop", labeled: true };
