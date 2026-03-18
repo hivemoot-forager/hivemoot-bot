@@ -769,9 +769,11 @@ export async function generateStandupLLMContent(
   } catch (error) {
     // LLM is Layer 1 (optional) — degrade gracefully to template-only.
     // BYOK infrastructure failures are logged at error for operator visibility.
+    // Use structured fields, not message prefix, to classify — parseProvider() throws
+    // "Unsupported BYOK provider: ..." which would not match a "BYOK " prefix check.
     const message = error instanceof Error ? error.message : String(error);
-    const isByokRuntime = message.startsWith("BYOK ");
-    const byokCtx = isByokRuntime ? formatBYOKErrorContext(error) : "";
+    const byokCtx = formatBYOKErrorContext(error);
+    const isByokRuntime = byokCtx !== "";
     logger[isByokRuntime ? "error" : "warn"](`LLM standup generation failed: ${message}${byokCtx}`);
     return null;
   }

@@ -261,11 +261,13 @@ export class GovernanceService {
           : undefined
       );
     } catch (error) {
-      // BYOK runtime failures (Redis outage, decryption errors) are operator-actionable —
-      // log at warn. Config-missing errors are expected noise — log at debug.
+      // BYOK runtime failures (Redis outage, decryption errors, unsupported provider) are
+      // operator-actionable — log at warn. Config-missing errors are expected noise — log at debug.
+      // Use structured fields, not message prefix, to classify — parseProvider() throws
+      // "Unsupported BYOK provider: ..." which would not match a "BYOK " prefix check.
       const message = error instanceof Error ? error.message : String(error);
-      const isByokRuntime = message.startsWith("BYOK ");
-      const byokCtx = isByokRuntime ? formatBYOKErrorContext(error) : "";
+      const byokCtx = formatBYOKErrorContext(error);
+      const isByokRuntime = byokCtx !== "";
       this.logger[isByokRuntime ? "warn" : "debug"](
         `LLM model resolution failed for issue #${ref.issueNumber}: ${message}${byokCtx}`,
       );

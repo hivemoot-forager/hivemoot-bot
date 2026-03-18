@@ -228,4 +228,46 @@ describe("generateStandupLLMContent", () => {
       "LLM standup generation failed: BYOK Redis lookup failed with HTTP 503"
     );
   });
+
+  it("logs unsupported-provider BYOK errors at error level with correlation context", async () => {
+    const { createModelFromEnv } = await import("./llm/provider.js");
+    const { logger } = await import("./logger.js");
+    const { generateStandupLLMContent } = await import("./standup.js");
+
+    // parseProvider() throws "Unsupported BYOK provider: ..." — does NOT start with "BYOK ".
+    // resolveInstallationBYOKConfig() wraps it with installationId/correlationId.
+    const unsupportedErr = Object.assign(
+      new Error("Unsupported BYOK provider: vertex"),
+      { installationId: 7, correlationId: "corr-standup-test" },
+    );
+    vi.mocked(createModelFromEnv).mockRejectedValue(unsupportedErr);
+
+    const data: StandupData = {
+      discussionPhase: [],
+      votingPhase: [],
+      extendedVoting: [],
+      readyToImplement: [],
+      implementationPRs: [],
+      repoFullName: "hivemoot/colony",
+      reportDate: "2026-02-06",
+      dayNumber: 42,
+    };
+
+    const result = await generateStandupLLMContent(data, { installationId: 7 });
+
+    expect(result).toBeNull();
+    // Must log at error (not warn) and include installationId/correlationId context
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("Unsupported BYOK provider: vertex"),
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("installationId=7"),
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("correlationId=corr-standup-test"),
+    );
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("Unsupported BYOK provider"),
+    );
+  });
 });

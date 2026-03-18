@@ -151,6 +151,40 @@ describe("GovernanceService", () => {
       );
     });
 
+    it("should log warn and include correlation context for unsupported-provider BYOK errors", async () => {
+      const mockLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+      const govWithLogger = new GovernanceService(mockIssues, mockLogger);
+
+      // parseProvider() throws "Unsupported BYOK provider: ..." — does NOT start with "BYOK ".
+      // resolveInstallationBYOKConfig() wraps it with installationId/correlationId.
+      const unsupportedErr = Object.assign(
+        new Error("Unsupported BYOK provider: mistral"),
+        { installationId: 42, correlationId: "test-corr-id" },
+      );
+      vi.mocked(createModelFromEnv).mockRejectedValue(unsupportedErr);
+
+      await govWithLogger.transitionToVoting(testRef);
+
+      expect(mockIssues.transition).toHaveBeenCalledWith(testRef, {
+        removeLabel: LABELS.DISCUSSION,
+        addLabel: LABELS.VOTING,
+        comment: expect.stringContaining(MESSAGES.votingStart()),
+      });
+      // Must log at warn (not debug) and include installationId/correlationId context
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("Unsupported BYOK provider: mistral"),
+      );
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("installationId=42"),
+      );
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("correlationId=test-corr-id"),
+      );
+      expect(mockLogger.debug).not.toHaveBeenCalledWith(
+        expect.stringContaining("Unsupported BYOK provider"),
+      );
+    });
+
     describe("with LLM configured", () => {
       const mockSummary = {
         proposal: "Test proposal",
