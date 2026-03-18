@@ -684,6 +684,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       config,
       trustedReviewers,
       graphql: mockGraphQL,
+      mergeable: true,
     });
 
     expect(result).toEqual({ action: "labeled" });
@@ -710,6 +711,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       config,
       trustedReviewers,
       graphql: mockGraphQL,
+      mergeable: true,
     });
 
     expect(mockGraphQL.graphql).toHaveBeenCalledWith(
@@ -734,6 +736,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       config,
       trustedReviewers,
       graphql: mockGraphQL,
+      mergeable: true,
     });
 
     expect(mockGraphQL.graphql).toHaveBeenCalledWith(
@@ -757,6 +760,28 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
 
     expect(result).toEqual({ action: "labeled" });
     expect(mockGraphQL.graphql).not.toHaveBeenCalled();
+  });
+
+  it("does NOT call enablePullRequestAutoMerge when mergeable is undefined (caller did not provide merge state)", async () => {
+    const config = makeConfig({ dryRun: false, mergeMethod: "squash" });
+    const prs = makeEligiblePROperations();
+    const mockGraphQL = { graphql: vi.fn().mockResolvedValue({}) };
+
+    const result = await evaluateAutomerge({
+      prs,
+      ref: baseRef,
+      config,
+      trustedReviewers,
+      graphql: mockGraphQL,
+      // mergeable not provided — treated same as null (unknown state)
+    });
+
+    expect(result).toEqual({ action: "labeled" });
+    expect(prs.addLabels).toHaveBeenCalledWith(baseRef, [LABELS.AUTOMERGE]);
+    expect(mockGraphQL.graphql).not.toHaveBeenCalledWith(
+      expect.stringContaining("enablePullRequestAutoMerge"),
+      expect.anything()
+    );
   });
 
   it("does NOT call enablePullRequestAutoMerge when mergeable is null (GitHub still computing)", async () => {
@@ -859,6 +884,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       trustedReviewers,
       graphql: mockGraphQL,
       log: { info: vi.fn(), warn: warnLog },
+      mergeable: true,
     });
 
     // Label was applied — classification result is preserved even if mutation fails
@@ -886,6 +912,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       trustedReviewers,
       graphql: mockGraphQL,
       log: { info: vi.fn(), warn: warnLog },
+      mergeable: true,
     });
 
     expect(warnLog).toHaveBeenCalledWith(
@@ -907,6 +934,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       config,
       trustedReviewers,
       graphql: mockGraphQL,
+      mergeable: true,
     });
 
     // Returns noop (label already present), but Phase 2 mutation must still fire
@@ -945,6 +973,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       config,
       trustedReviewers,
       graphql: mockGraphQL,
+      mergeable: true,
       // headSha NOT pre-fetched, so prs.get() must be called for CI check
     });
 
@@ -969,6 +998,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       trustedReviewers,
       graphql: mockGraphQL,
       nodeId: "PR_kwPreFetched",
+      mergeable: true,
     });
 
     expect(getPRMock).not.toHaveBeenCalled();
@@ -993,6 +1023,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       trustedReviewers,
       graphql: mockGraphQL,
       log: { info: vi.fn(), warn: warnLog },
+      mergeable: true,
     });
 
     // Label was still added (automerge conditions met), but mutation was skipped

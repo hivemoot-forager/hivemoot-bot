@@ -17,6 +17,7 @@ import {
 } from "../../lib/index.js";
 import {
   getLinkedIssues,
+  disablePullRequestAutoMerge,
 } from "../../lib/graphql-queries.js";
 import { hasSameRepoClosingKeywordRef } from "../../lib/closing-keywords.js";
 import { filterByLabel } from "../../lib/types.js";
@@ -266,8 +267,20 @@ export function app(probotApp: Probot): void {
       const prRef = { owner, repo, prNumber: number };
       const currentLabels = context.payload.pull_request.labels?.map((label: { name?: string }) => label.name ?? "") ?? [];
       const hadQueuedSquash = currentLabels.some((label) => isLabelMatch(label, LABELS.SQUASH_QUEUED));
+      const hadAutomerge = currentLabels.some((label) => isLabelMatch(label, LABELS.AUTOMERGE));
       await prs.removeLabel(prRef, LABELS.MERGE_READY);
       await prs.removeLabel(prRef, LABELS.SQUASH_QUEUED);
+      // Phase 2: disable native auto-merge before stripping the label so the two stay in sync
+      if (hadAutomerge && repoConfig.governance.pr?.automerge && !repoConfig.governance.pr.automerge.dryRun) {
+        try {
+          await disablePullRequestAutoMerge(context.octokit, context.payload.pull_request.node_id);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!msg.includes("PullRequestAutoMergeNotEnabled")) {
+            context.log.warn(`[PR #${number}] Failed to disable GitHub auto-merge on synchronize: ${msg}`);
+          }
+        }
+      }
       await prs.removeLabel(prRef, LABELS.AUTOMERGE);
 
       if (hadQueuedSquash) {
@@ -398,6 +411,17 @@ export function app(probotApp: Probot): void {
         removedLabels.push(LABELS.MERGE_READY);
       }
       if (hadAutomerge) {
+        // Phase 2: disable native auto-merge before stripping the label so the two stay in sync
+        if (repoConfig.governance.pr.automerge && !repoConfig.governance.pr.automerge.dryRun) {
+          try {
+            await disablePullRequestAutoMerge(context.octokit, context.payload.pull_request.node_id);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (!msg.includes("PullRequestAutoMergeNotEnabled")) {
+              context.log.warn(`[PR #${number}] Failed to disable GitHub auto-merge on converted_to_draft: ${msg}`);
+            }
+          }
+        }
         await prs.removeLabel(prRef, LABELS.AUTOMERGE);
         removedLabels.push(LABELS.AUTOMERGE);
       }
