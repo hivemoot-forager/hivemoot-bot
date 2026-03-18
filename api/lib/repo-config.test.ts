@@ -2657,6 +2657,42 @@ governance:
         expect(config!.governance.pr!.automerge!.commitHeadline).toBeUndefined();
       });
 
+      it("should ignore whitespace-only commitHeadline and leave it undefined", async () => {
+        const configYaml = `
+version: 1
+governance:
+  pr:
+    trustedReviewers: [alice]
+    automerge:
+      dryRun: false
+      allowedPaths: ["**/*.md"]
+      commitHeadline: "   "
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.automerge!.commitHeadline).toBeUndefined();
+      });
+
+      it("should trim leading/trailing whitespace from valid commitHeadline", async () => {
+        const configYaml = `
+version: 1
+governance:
+  pr:
+    trustedReviewers: [alice]
+    automerge:
+      dryRun: false
+      allowedPaths: ["**/*.md"]
+      commitHeadline: "  Auto-merge: title  "
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.automerge!.commitHeadline).toBe("Auto-merge: title");
+      });
+
       it("should ignore non-string commitHeadline and leave it undefined", async () => {
         const configYaml = `
 version: 1
