@@ -322,7 +322,7 @@ export async function evaluateAutomerge(
       }
     }
 
-    if (capturedNodeId) {
+    if (capturedNodeId && capturedHeadSha) {
       try {
         await enablePullRequestAutoMerge(params.graphql, capturedNodeId, config.mergeMethod, {
           commitHeadline: config.commitHeadline,

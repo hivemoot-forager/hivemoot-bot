@@ -1122,6 +1122,44 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     expect(mockGraphQL.graphql).not.toHaveBeenCalled();
   });
 
+  it("skips mutation when nodeId is pre-seeded but headSha is absent and prs.get() fails", async () => {
+    // Regression: if nodeId arrives from the webhook payload but headSha is absent and the
+    // recovery prs.get() throws, capturedNodeId is still truthy. Before the fix, the old
+    // `if (capturedNodeId)` gate would pass, firing enablePullRequestAutoMerge with
+    // expectedHeadOid: undefined — silently dropping the TOCTOU guard.
+    // After the fix (`if (capturedNodeId && capturedHeadSha)`), the mutation must not fire.
+    const config = makeConfig({ dryRun: false, requireChecks: false });
+    const warnLog = vi.fn();
+    const prs = makeEligiblePROperations({
+      get: vi.fn().mockRejectedValue(new Error("API timeout")),
+    });
+    const mockGraphQL = { graphql: vi.fn().mockResolvedValue({}) };
+
+    const result = await evaluateAutomerge({
+      prs,
+      ref: baseRef,
+      config,
+      trustedReviewers,
+      graphql: mockGraphQL,
+      nodeId: "PR_kwPreSeededNodeId",
+      // headSha intentionally not provided: prs.get() is needed but will fail
+      log: { info: vi.fn(), warn: warnLog },
+      mergeable: true,
+    });
+
+    // Label was still added (automerge conditions met), but mutation must be skipped
+    // because headSha could not be captured — running without expectedHeadOid would
+    // arm native auto-merge on an unverified head.
+    expect(result).toEqual({ action: "labeled" });
+    expect(warnLog).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to fetch PR node ID for auto-merge")
+    );
+    expect(mockGraphQL.graphql).not.toHaveBeenCalledWith(
+      expect.stringContaining("enablePullRequestAutoMerge"),
+      expect.anything()
+    );
+  });
+
   it("swallows PullRequestAutoMergeNotEnabled when disabling — idempotent no-op", async () => {
     const config = makeConfig({ dryRun: false });
     const prs = createMockPROperations({
