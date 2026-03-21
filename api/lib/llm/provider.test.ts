@@ -61,6 +61,24 @@ describe("LLM Provider", () => {
       expect(isLLMConfigured()).toBe(false);
     });
 
+    it("should return false for Object.prototype-inherited names like 'constructor'", () => {
+      // Without a hasOwnProperty guard, PROVIDER_ALIASES['constructor'] returns the
+      // Object constructor (truthy), causing isLLMConfigured() to return true incorrectly.
+      process.env.LLM_PROVIDER = "constructor";
+      process.env.LLM_MODEL = "some-model";
+
+      expect(isLLMConfigured()).toBe(false);
+    });
+
+    it("should return false for other prototype-inherited names", () => {
+      for (const name of ["hasOwnProperty", "toString", "valueOf"]) {
+        process.env.LLM_PROVIDER = name;
+        process.env.LLM_MODEL = "some-model";
+
+        expect(isLLMConfigured()).toBe(false);
+      }
+    });
+
     it("should return true when valid provider and model are set", () => {
       process.env.LLM_PROVIDER = "anthropic";
       process.env.LLM_MODEL = "claude-3-haiku";
