@@ -421,13 +421,15 @@ const ENABLE_AUTO_MERGE_MUTATION = `
     $pullRequestId: ID!,
     $mergeMethod: PullRequestMergeMethod!,
     $commitHeadline: String,
-    $commitBody: String
+    $commitBody: String,
+    $expectedHeadOid: GitObjectID
   ) {
     enablePullRequestAutoMerge(input: {
       pullRequestId: $pullRequestId,
       mergeMethod: $mergeMethod,
       commitHeadline: $commitHeadline,
-      commitBody: $commitBody
+      commitBody: $commitBody,
+      expectedHeadOid: $expectedHeadOid
     }) {
       pullRequest {
         number
@@ -455,6 +457,12 @@ export interface EnableAutoMergeOptions {
   commitHeadline?: string;
   /** Custom commit body. Only applies to SQUASH and MERGE; ignored for REBASE. */
   commitBody?: string;
+  /**
+   * HEAD SHA that was evaluated for automerge eligibility.
+   * GitHub rejects the mutation if the PR's HEAD has moved to a different SHA
+   * since classification — prevents arming auto-merge on an unclassified push.
+   */
+  expectedHeadOid?: string;
 }
 
 /**
@@ -483,6 +491,7 @@ export async function enablePullRequestAutoMerge(
     mergeMethod: MERGE_METHOD_MAP[mergeMethod],
     commitHeadline: options?.commitHeadline ?? null,
     commitBody: options?.commitBody ?? null,
+    expectedHeadOid: options?.expectedHeadOid ?? null,
   });
 }
 

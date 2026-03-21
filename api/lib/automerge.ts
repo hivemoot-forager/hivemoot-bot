@@ -199,9 +199,10 @@ export async function evaluateAutomerge(
   const labels = params.currentLabels ?? await prs.getLabels(ref);
   const hasAutomerge = labels.some(l => isLabelMatch(l, LABELS.AUTOMERGE));
 
-  // Track nodeId across steps to avoid redundant prs.get() calls.
-  // Seeded from pre-fetched webhook payload value when available.
+  // Track nodeId and headSha across steps to avoid redundant prs.get() calls.
+  // Seeded from pre-fetched webhook payload values when available.
   let capturedNodeId: string | undefined = params.nodeId;
+  let capturedHeadSha: string | undefined = params.headSha;
 
   // Helper: remove label and, when Phase 2 is active, disable native auto-merge.
   // Phase 2 disable runs BEFORE label removal: if the GraphQL call fails unexpectedly,
@@ -277,8 +278,11 @@ export async function evaluateAutomerge(
     if (!headSha) {
       const pr = await prs.get(ref);
       headSha = pr.headSha;
-      // Capture nodeId while we have the PR — avoids a second prs.get() in Phase 2
+      // Capture nodeId and headSha while we have the PR — avoids a second prs.get() in Phase 2
       capturedNodeId ??= pr.nodeId;
+      capturedHeadSha ??= pr.headSha;
+    } else {
+      capturedHeadSha ??= headSha;
     }
 
     const ciPassing = await isCIPassing(prs, ref, headSha);
@@ -300,10 +304,12 @@ export async function evaluateAutomerge(
   // Skip when mergeable is null: GitHub is still computing the merge state.
   // The next check_suite or push event will re-evaluate once the state is known.
   if (!config.dryRun && params.graphql && params.mergeable != null) {
-    // Fetch nodeId only if not already captured from an earlier prs.get() call
+    // Fetch nodeId (and headSha for TOCTOU guard) if not already captured
     if (!capturedNodeId) {
       try {
-        capturedNodeId = (await prs.get(ref)).nodeId;
+        const pr = await prs.get(ref);
+        capturedNodeId = pr.nodeId;
+        capturedHeadSha ??= pr.headSha;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const warnMsg = `[PR #${ref.prNumber}] Failed to fetch PR node ID for auto-merge: ${msg}`;
@@ -316,6 +322,10 @@ export async function evaluateAutomerge(
         await enablePullRequestAutoMerge(params.graphql, capturedNodeId, config.mergeMethod, {
           commitHeadline: config.commitHeadline,
           commitBody: config.commitBody,
+          // expectedHeadOid prevents arming auto-merge on a head that wasn't classified.
+          // GitHub rejects the mutation if a push occurred between classification and here.
+          // The next check_suite/synchronize event will re-evaluate the new head.
+          expectedHeadOid: capturedHeadSha,
         });
         log?.info(`[PR #${ref.prNumber}] Enabled GitHub native auto-merge (${config.mergeMethod})`);
       } catch (err) {

@@ -704,7 +704,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     expect(prs.addLabels).toHaveBeenCalledWith(baseRef, [LABELS.AUTOMERGE]);
     expect(mockGraphQL.graphql).toHaveBeenCalledWith(
       expect.stringContaining("enablePullRequestAutoMerge"),
-      { pullRequestId: "PR_kwNode123", mergeMethod: "SQUASH", commitHeadline: null, commitBody: null }
+      { pullRequestId: "PR_kwNode123", mergeMethod: "SQUASH", commitHeadline: null, commitBody: null, expectedHeadOid: "abc123" }
     );
   });
 
@@ -734,6 +734,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
         mergeMethod: "SQUASH",
         commitHeadline: "chore: auto-merge",
         commitBody: "Auto-merged.",
+        expectedHeadOid: "abc123",
       }
     );
   });
@@ -754,7 +755,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
 
     expect(mockGraphQL.graphql).toHaveBeenCalledWith(
       expect.stringContaining("enablePullRequestAutoMerge"),
-      { pullRequestId: "PR_kwNode123", mergeMethod: "REBASE", commitHeadline: null, commitBody: null }
+      { pullRequestId: "PR_kwNode123", mergeMethod: "REBASE", commitHeadline: null, commitBody: null, expectedHeadOid: "abc123" }
     );
   });
 
@@ -818,6 +819,55 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     expect(mockGraphQL.graphql).not.toHaveBeenCalledWith(
       expect.stringContaining("enablePullRequestAutoMerge"),
       expect.anything()
+    );
+  });
+
+  it("passes expectedHeadOid from params.headSha to the mutation", async () => {
+    const config = makeConfig({ dryRun: false, requireChecks: false });
+    const prs = makeEligiblePROperations();
+    const mockGraphQL = { graphql: vi.fn().mockResolvedValue({}) };
+
+    await evaluateAutomerge({
+      prs,
+      ref: baseRef,
+      config,
+      trustedReviewers,
+      graphql: mockGraphQL,
+      mergeable: true,
+      headSha: "classified-sha-abc",
+      nodeId: "PR_kwNode123",
+    });
+
+    expect(mockGraphQL.graphql).toHaveBeenCalledWith(
+      expect.stringContaining("enablePullRequestAutoMerge"),
+      expect.objectContaining({ expectedHeadOid: "classified-sha-abc" })
+    );
+  });
+
+  it("passes expectedHeadOid captured from prs.get() when headSha not pre-fetched", async () => {
+    const config = makeConfig({ dryRun: false, requireChecks: true });
+    const prs = makeEligiblePROperations({
+      get: vi.fn().mockResolvedValue({ headSha: "fetched-sha-xyz", nodeId: "PR_kwNode123" }),
+      getCheckRunsForRef: vi.fn().mockResolvedValue({
+        totalCount: 1,
+        checkRuns: [{ name: "CI", conclusion: "success", status: "completed" }],
+      }),
+    });
+    const mockGraphQL = { graphql: vi.fn().mockResolvedValue({}) };
+
+    await evaluateAutomerge({
+      prs,
+      ref: baseRef,
+      config,
+      trustedReviewers,
+      graphql: mockGraphQL,
+      mergeable: true,
+      // headSha intentionally not provided — must be captured from prs.get() in CI step
+    });
+
+    expect(mockGraphQL.graphql).toHaveBeenCalledWith(
+      expect.stringContaining("enablePullRequestAutoMerge"),
+      expect.objectContaining({ expectedHeadOid: "fetched-sha-xyz" })
     );
   });
 
