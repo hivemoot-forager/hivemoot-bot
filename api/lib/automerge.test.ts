@@ -1200,7 +1200,8 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       log: { info: vi.fn(), warn: warnLog },
     });
 
-    expect(result).toEqual({ action: "unlabeled", reason: "file not allowed: src/main.ts" });
+    // Fail closed: label is retained for retry when nodeId cannot be fetched
+    expect(result).toEqual({ action: "noop", labeled: true });
     expect(warnLog).toHaveBeenCalledWith(
       expect.stringContaining("Failed to fetch PR node ID for auto-merge disable")
     );
@@ -1209,6 +1210,8 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       expect.stringContaining("disablePullRequestAutoMerge"),
       expect.anything()
     );
+    // Label must NOT be removed — it is the retry signal for future reconciliations
+    expect(prs.removeLabel).not.toHaveBeenCalled();
   });
 
   it("passes commitHeadline and commitBody for squash even when mergeMethod is rebase in config", async () => {

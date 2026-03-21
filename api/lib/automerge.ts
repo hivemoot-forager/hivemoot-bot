@@ -218,6 +218,9 @@ export async function evaluateAutomerge(
             const msg = err instanceof Error ? err.message : String(err);
             const warnMsg = `[PR #${ref.prNumber}] Failed to fetch PR node ID for auto-merge disable: ${msg}`;
             if (log?.warn) { log.warn(warnMsg); } else { logger.warn(warnMsg); }
+            // Cannot disable native auto-merge without nodeId — keep the label so
+            // future reconciliations can retry once the REST API is available again.
+            return { action: "noop", labeled: true };
           }
         }
         if (capturedNodeId) {
