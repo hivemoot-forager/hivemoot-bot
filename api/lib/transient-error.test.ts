@@ -122,7 +122,25 @@ describe("isAutoMergeNotEnabledError", () => {
     expect(isAutoMergeNotEnabledError(null)).toBe(false);
   });
 
-  it("returns false for a plain object", () => {
+  it("returns false for a plain object without name", () => {
     expect(isAutoMergeNotEnabledError({ message: "PullRequestAutoMergeNotEnabled" })).toBe(false);
+  });
+
+  it("returns true for a cross-version instance (duck-typed, not instanceof)", () => {
+    // Simulates GraphqlResponseError thrown by octokit's bundled @octokit/graphql 9.x
+    // when the root install is 7.x — instanceof would fail, but duck-typing works.
+    const foreignError = Object.assign(new Error("Request failed"), {
+      name: "GraphqlResponseError",
+      errors: [{ message: "Pull request Auto merge is not enabled.", type: "UNPROCESSABLE" }],
+    });
+    expect(isAutoMergeNotEnabledError(foreignError)).toBe(true);
+  });
+
+  it("returns false for a cross-version instance with a non-matching error type", () => {
+    const foreignError = Object.assign(new Error("Request failed"), {
+      name: "GraphqlResponseError",
+      errors: [{ message: "Not Found", type: "NOT_FOUND" }],
+    });
+    expect(isAutoMergeNotEnabledError(foreignError)).toBe(false);
   });
 });

@@ -6,7 +6,6 @@
  * or validation failure.
  */
 
-import { GraphqlResponseError } from "@octokit/graphql";
 import { getErrorStatus } from "./github-client.js";
 
 /**
@@ -49,13 +48,29 @@ export function isTransientError(error: unknown): boolean {
  * `disablePullRequestAutoMerge` is called on a PR that has no active auto-merge.
  * The type identifier ("PullRequestAutoMergeNotEnabled") lives in `errors[].type`
  * and does NOT appear in `.message`, so string-matching `.message` silently fails.
+ *
+ * Uses duck-typing on `.name` rather than `instanceof GraphqlResponseError`
+ * because the project has two installed versions of `@octokit/graphql` (root 7.1.1
+ * and octokit-bundled 9.0.3). Errors thrown by `context.octokit.graphql` are
+ * instances of the 9.x class; importing from `@octokit/graphql` resolves to 7.x.
+ * `instanceof` checks fail across class boundaries, silently misclassifying errors
+ * and leaving `hivemoot:automerge` intact when it should be removed.
  */
 export function isAutoMergeNotEnabledError(error: unknown): boolean {
-  if (!(error instanceof GraphqlResponseError)) return false;
-  return (
-    error.errors?.some(
-      (e) =>
-        e.type === "UNPROCESSABLE" && /not enabled/i.test(e.message ?? "")
-    ) ?? false
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    (error as { name?: unknown }).name !== "GraphqlResponseError"
+  ) {
+    return false;
+  }
+  const errors = (error as { errors?: unknown }).errors;
+  if (!Array.isArray(errors)) return false;
+  return errors.some(
+    (e: unknown) =>
+      typeof e === "object" &&
+      e !== null &&
+      (e as { type?: unknown }).type === "UNPROCESSABLE" &&
+      /not enabled/i.test(String((e as { message?: unknown }).message ?? ""))
   );
 }
