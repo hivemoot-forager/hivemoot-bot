@@ -57,6 +57,9 @@ export const CONFIG_BOUNDS = {
     minNewComments: { min: 1, max: 100, default: 5 },
     cooldownMinutes: { min: 5, max: 10080, default: 60 }, // 5 min..7 days
   },
+  reviewRequests: {
+    count: { min: 1, max: 10, default: 1 },
+  },
 } as const;
 
 // ───────────────────────────────────────────────────────────────────────────────

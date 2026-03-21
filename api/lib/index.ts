@@ -79,6 +79,13 @@ export type {
   ClassifyResult,
 } from "./automerge.js";
 
+// Trusted reviewer auto-request
+export { requestTrustedReviewers } from "./review-requests.js";
+export type {
+  ReviewRequestsParams,
+  ReviewRequestsResult,
+} from "./review-requests.js";
+
 // Repository label bootstrap
 export { RepositoryLabelService, createRepositoryLabelService } from "./repository-labels.js";
 export type { RepositoryLabelClient, EnsureLabelsResult } from "./repository-labels.js";
@@ -106,6 +113,7 @@ export type {
   IntakeMethod,
   MergeReadyConfig,
   AutomergeConfig,
+  ReviewRequestsConfig,
   PRConfig,
   StandupConfig,
   AutoGatherConfig,

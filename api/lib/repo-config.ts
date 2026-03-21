@@ -81,6 +81,13 @@ export interface AutomergeConfig {
   commitBody?: string;
 }
 
+// ── Review Requests Config ───────────────────────────────────────────────
+
+export interface ReviewRequestsConfig {
+  /** Number of trusted reviewers to request per PR. Clamped to [1, 10]. */
+  count: number;
+}
+
 // ── Standup Config ──────────────────────────────────────────────────────
 
 export interface StandupConfig {
@@ -165,6 +172,7 @@ export interface RepoConfigFile {
       intake?: unknown;
       mergeReady?: unknown;
       automerge?: unknown;
+      reviewRequests?: unknown;
     };
   };
   standup?: {
@@ -185,6 +193,8 @@ export interface PRConfig {
   intake: IntakeMethod[];
   mergeReady: MergeReadyConfig | null;
   automerge: AutomergeConfig | null;
+  /** Null when `governance.pr.reviewRequests` is absent — feature disabled. */
+  reviewRequests: ReviewRequestsConfig | null;
 }
 
 /**
@@ -959,6 +969,50 @@ function parseMergeReadyConfig(
 }
 
 /**
+ * Parse and validate review-requests config.
+ * Opt-in feature — disabled when `governance.pr.reviewRequests` is absent.
+ * When enabled, the bot requests up to `count` trusted reviewers when a candidate
+ * PR becomes reviewable.
+ */
+function parseReviewRequestsConfig(
+  value: unknown,
+  trustedReviewers: string[],
+  repoFullName: string
+): ReviewRequestsConfig | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value !== "object" || Array.isArray(value)) {
+    logger.warn(
+      `[${repoFullName}] Invalid reviewRequests: expected object. Disabling feature.`
+    );
+    return null;
+  }
+
+  if (trustedReviewers.length === 0) {
+    logger.warn(
+      `[${repoFullName}] reviewRequests configured but trustedReviewers is empty. ` +
+      `No reviewers available to request. Disabling feature.`
+    );
+    return null;
+  }
+
+  const obj = value as { count?: unknown };
+
+  const count = parseIntValue(
+    obj.count,
+    {
+      ...CONFIG_BOUNDS.reviewRequests.count,
+    },
+    "reviewRequests.count",
+    repoFullName
+  );
+
+  return { count };
+}
+
+/**
  * Parse and validate auto-gather config.
  * Opt-in feature — disabled by default.
  * When enabled, auto-gather triggers on discussion-phase issues after N new comments.
@@ -1356,6 +1410,7 @@ function parseRepoConfig(raw: unknown, repoFullName: string): EffectiveConfig {
     const intake = parseIntakeMethods(prConfigRaw?.intake, trustedReviewers, repoFullName);
     const mergeReady = parseMergeReadyConfig(prConfigRaw?.mergeReady, trustedReviewers, repoFullName);
     const automerge = parseAutomergeConfig(prConfigRaw?.automerge, trustedReviewers, repoFullName);
+    const reviewRequests = parseReviewRequestsConfig(prConfigRaw?.reviewRequests, trustedReviewers, repoFullName);
     pr = {
       // Stale PR cleanup is opt-in per repo: omit staleDays (or set it to null) to disable it.
       staleDays:
@@ -1367,6 +1422,7 @@ function parseRepoConfig(raw: unknown, repoFullName: string): EffectiveConfig {
       intake,
       mergeReady,
       automerge,
+      reviewRequests,
     };
   }
 

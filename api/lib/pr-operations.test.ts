@@ -276,6 +276,7 @@ describe("PROperations", () => {
         headSha: "abc123def456",
         mergeable: true,
         draft: false,
+        requestedReviewers: [],
       });
       expect(mockClient.rest.pulls.get).toHaveBeenCalledWith({
         owner: "test-org",

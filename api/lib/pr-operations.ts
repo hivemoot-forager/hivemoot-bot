@@ -34,6 +34,7 @@ export interface PRClient {
           head: { sha: string };
           draft?: boolean;
           mergeable: boolean | null;
+          requested_reviewers: Array<{ login: string }>;
         };
       }>;
 
@@ -55,8 +56,17 @@ export interface PRClient {
           state: string;
           user: { login: string } | null;
           submitted_at: string;
+          /** HEAD commit SHA at the time the review was submitted. */
+          commit_id: string;
         }>;
       }>;
+
+      requestReviewers: (params: {
+        owner: string;
+        repo: string;
+        pull_number: number;
+        reviewers: string[];
+      }) => Promise<unknown>;
 
       listCommits: (params: {
         owner: string;
@@ -259,6 +269,8 @@ export class PROperations {
     headSha: string;
     draft: boolean;
     mergeable: boolean | null;
+    /** Logins of reviewers with a currently pending review request (lowercased). */
+    requestedReviewers: string[];
   }> {
     const { data } = await this.client.rest.pulls.get({
       owner: ref.owner,
@@ -277,6 +289,7 @@ export class PROperations {
       headSha: data.head.sha,
       draft: data.draft ?? false,
       mergeable: data.mergeable,
+      requestedReviewers: (data.requested_reviewers ?? []).map((r) => r.login.toLowerCase()),
     };
   }
 
@@ -831,5 +844,58 @@ export class PROperations {
     }
 
     return false;
+  }
+
+  /**
+   * Get the set of reviewers who have submitted any decisive review at a given head SHA.
+   *
+   * Used to exclude reviewers from auto-request when they have already reviewed
+   * the current head (regardless of their verdict). Uses pagination to handle
+   * PRs with >100 reviews.
+   */
+  async getReviewersAtCurrentHead(ref: PRRef, headSha: string): Promise<Set<string>> {
+    const DECISIVE_STATES = new Set(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"]);
+    const reviewersAtHead = new Set<string>();
+
+    let page = 1;
+    const perPage = 100;
+
+    while (true) {
+      const { data: reviews } = await this.client.rest.pulls.listReviews({
+        owner: ref.owner,
+        repo: ref.repo,
+        pull_number: ref.prNumber,
+        per_page: perPage,
+        page,
+      });
+
+      if (reviews.length === 0) break;
+
+      for (const review of reviews) {
+        if (review.user && DECISIVE_STATES.has(review.state) && review.commit_id === headSha) {
+          reviewersAtHead.add(review.user.login.toLowerCase());
+        }
+      }
+
+      if (reviews.length < perPage) break;
+      page++;
+    }
+
+    return reviewersAtHead;
+  }
+
+  /**
+   * Request reviewers on a PR.
+   * GitHub silently deduplicates already-requested reviewers, so this is safe to call
+   * even when some logins are already in the `requested_reviewers` list.
+   */
+  async requestReviewers(ref: PRRef, reviewers: string[]): Promise<void> {
+    if (reviewers.length === 0) return;
+    await this.client.rest.pulls.requestReviewers({
+      owner: ref.owner,
+      repo: ref.repo,
+      pull_number: ref.prNumber,
+      reviewers,
+    });
   }
 }

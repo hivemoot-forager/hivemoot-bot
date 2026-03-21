@@ -15,6 +15,7 @@ import {
   evaluateMergeReadiness,
   evaluateAutomerge,
 } from "../../lib/index.js";
+import { requestTrustedReviewers } from "../../lib/review-requests.js";
 import {
   getLinkedIssues,
   disablePullRequestAutoMerge,
@@ -379,6 +380,18 @@ export function app(probotApp: Probot): void {
           mergeable: context.payload.pull_request.mergeable,
           log: context.log,
           graphql: context.octokit,
+        });
+
+        await requestTrustedReviewers({
+          prs,
+          ref: prRef,
+          config: repoConfig.governance.pr.reviewRequests,
+          trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+          author: context.payload.pull_request.user?.login?.toLowerCase() ?? "",
+          headSha: context.payload.pull_request.head?.sha ?? "",
+          currentLabels,
+          draft: false,
+          log: context.log,
         });
       }
     } catch (error) {
@@ -836,16 +849,32 @@ export function app(probotApp: Probot): void {
         const currentLabels = context.payload.pull_request.labels?.map(
           (l: { name: string }) => l.name
         );
+        const prRef = { owner, repo, prNumber: number };
 
         await evaluateMergeReadiness({
           prs,
-          ref: { owner, repo, prNumber: number },
+          ref: prRef,
           config: repoConfig.governance.pr.mergeReady,
           trustedReviewers: repoConfig.governance.pr.trustedReviewers,
           currentLabels,
           draft: context.payload.pull_request.draft,
           log: context.log,
         });
+
+        // Auto-request reviewers when the candidate label is *added* to a non-draft PR.
+        if (context.payload.action === "labeled" && !context.payload.pull_request.draft) {
+          await requestTrustedReviewers({
+            prs,
+            ref: prRef,
+            config: repoConfig.governance.pr.reviewRequests,
+            trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+            author: context.payload.pull_request.user?.login?.toLowerCase() ?? "",
+            headSha: context.payload.pull_request.head.sha,
+            currentLabels,
+            draft: context.payload.pull_request.draft,
+            log: context.log,
+          });
+        }
       }
     } catch (error) {
       context.log.error({ err: error, pr: number, repo: fullName }, "Failed to evaluate merge-readiness after label change");
@@ -888,16 +917,22 @@ export function app(probotApp: Probot): void {
             headSha,
             log: context.log,
           });
-          // CheckSuitePullRequest omits draft and mergeable; fetch from REST so the
-          // automerge gates can fire correctly on CI completion events.
+          // CheckSuitePullRequest omits draft, mergeable, and author; fetch from REST
+          // so the automerge gates and review-request logic fire correctly on CI events.
           let prDraft: boolean | undefined;
           let prMergeable: boolean | null | undefined;
           let prNodeId: string | undefined;
-          if (repoConfig.governance.pr.automerge) {
+          let prAuthor: string | undefined;
+          let prLabels: string[] | undefined;
+          if (repoConfig.governance.pr.automerge || repoConfig.governance.pr.reviewRequests) {
             const prState = await prs.get(prRef);
             prDraft = prState.draft;
             prMergeable = prState.mergeable;
             prNodeId = prState.nodeId;
+            prAuthor = prState.author;
+          }
+          if (repoConfig.governance.pr.reviewRequests) {
+            prLabels = await prs.getLabels(prRef);
           }
           await evaluateAutomerge({
             prs,
@@ -910,6 +945,17 @@ export function app(probotApp: Probot): void {
             mergeable: prMergeable,
             log: context.log,
             graphql: context.octokit,
+          });
+          await requestTrustedReviewers({
+            prs,
+            ref: prRef,
+            config: repoConfig.governance.pr.reviewRequests,
+            trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+            author: prAuthor ?? "unknown",
+            headSha,
+            currentLabels: prLabels,
+            draft: prDraft,
+            log: context.log,
           });
         } catch (error) {
           context.log.error({ err: error, pr: pr.number, repo: fullName }, "Failed to evaluate merge-readiness after check_suite");
@@ -965,16 +1011,18 @@ export function app(probotApp: Probot): void {
             headSha,
             log: context.log,
           });
-          // CheckRunPullRequest omits draft and mergeable; fetch from REST so the
-          // automerge gates can fire correctly on CI completion events.
+          // CheckRunPullRequest omits draft, mergeable, and author; fetch from REST
+          // so the automerge gates and review-request logic fire correctly on CI events.
           let prDraft: boolean | undefined;
           let prMergeable: boolean | null | undefined;
           let checkRunPRNodeId: string | undefined;
-          if (repoConfig.governance.pr.automerge) {
+          let prAuthor: string | undefined;
+          if (repoConfig.governance.pr.automerge || repoConfig.governance.pr.reviewRequests) {
             const prState = await prs.get(prRef);
             prDraft = prState.draft;
             prMergeable = prState.mergeable;
             checkRunPRNodeId = prState.nodeId;
+            prAuthor = prState.author;
           }
           await evaluateAutomerge({
             prs,
@@ -988,6 +1036,17 @@ export function app(probotApp: Probot): void {
             mergeable: prMergeable,
             log: context.log,
             graphql: context.octokit,
+          });
+          await requestTrustedReviewers({
+            prs,
+            ref: prRef,
+            config: repoConfig.governance.pr.reviewRequests,
+            trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+            author: prAuthor ?? "unknown",
+            headSha,
+            currentLabels,
+            draft: prDraft,
+            log: context.log,
           });
 
           if (currentLabels.some((label) => isLabelMatch(label, LABELS.SQUASH_QUEUED))) {
