@@ -307,11 +307,13 @@ export async function evaluateAutomerge(
   // Skip when mergeable is null: GitHub is still computing the merge state.
   // The next check_suite or push event will re-evaluate once the state is known.
   if (!config.dryRun && params.graphql && params.mergeable != null) {
-    // Fetch nodeId (and headSha for TOCTOU guard) if not already captured
-    if (!capturedNodeId) {
+    // Fetch nodeId and headSha if either is missing.
+    // headSha must be captured even when nodeId is pre-seeded: without it,
+    // expectedHeadOid is undefined and the TOCTOU guard is silently dropped.
+    if (!capturedNodeId || !capturedHeadSha) {
       try {
         const pr = await prs.get(ref);
-        capturedNodeId = pr.nodeId;
+        capturedNodeId ??= pr.nodeId;
         capturedHeadSha ??= pr.headSha;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

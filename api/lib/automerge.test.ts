@@ -1048,7 +1048,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     );
   });
 
-  it("uses pre-fetched nodeId from params without calling prs.get()", async () => {
+  it("skips prs.get() when both nodeId and headSha are pre-seeded", async () => {
     const config = makeConfig({ dryRun: false, requireChecks: false });
     const getPRMock = vi.fn();
     const prs = makeEligiblePROperations({ get: getPRMock });
@@ -1061,13 +1061,38 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       trustedReviewers,
       graphql: mockGraphQL,
       nodeId: "PR_kwPreFetched",
+      headSha: "sha-pre-fetched",
       mergeable: true,
     });
 
     expect(getPRMock).not.toHaveBeenCalled();
     expect(mockGraphQL.graphql).toHaveBeenCalledWith(
       expect.stringContaining("enablePullRequestAutoMerge"),
-      expect.objectContaining({ pullRequestId: "PR_kwPreFetched" })
+      expect.objectContaining({ pullRequestId: "PR_kwPreFetched", expectedHeadOid: "sha-pre-fetched" })
+    );
+  });
+
+  it("fetches headSha from prs.get() when nodeId is pre-seeded but headSha is not", async () => {
+    const config = makeConfig({ dryRun: false, requireChecks: false });
+    const getPRMock = vi.fn().mockResolvedValue({ headSha: "fetched-sha", nodeId: "PR_kwPreFetched" });
+    const prs = makeEligiblePROperations({ get: getPRMock });
+    const mockGraphQL = { graphql: vi.fn().mockResolvedValue({}) };
+
+    await evaluateAutomerge({
+      prs,
+      ref: baseRef,
+      config,
+      trustedReviewers,
+      graphql: mockGraphQL,
+      nodeId: "PR_kwPreFetched",
+      // headSha intentionally not provided — must be fetched for expectedHeadOid
+      mergeable: true,
+    });
+
+    expect(getPRMock).toHaveBeenCalledTimes(1);
+    expect(mockGraphQL.graphql).toHaveBeenCalledWith(
+      expect.stringContaining("enablePullRequestAutoMerge"),
+      expect.objectContaining({ pullRequestId: "PR_kwPreFetched", expectedHeadOid: "fetched-sha" })
     );
   });
 
