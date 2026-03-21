@@ -272,18 +272,25 @@ export function app(probotApp: Probot): void {
       const hadAutomerge = currentLabels.some((label) => isLabelMatch(label, LABELS.AUTOMERGE));
       await prs.removeLabel(prRef, LABELS.MERGE_READY);
       await prs.removeLabel(prRef, LABELS.SQUASH_QUEUED);
-      // Phase 2: disable native auto-merge before stripping the label so the two stay in sync
+      // Phase 2: disable native auto-merge before stripping the label so the two stay in sync.
+      // On unexpected error, retain the label (matching removeIfLabeled's fail-closed contract).
+      let skipAutomergeRemoval = false;
       if (hadAutomerge && repoConfig.governance.pr?.automerge && !repoConfig.governance.pr.automerge.dryRun) {
         try {
           await disablePullRequestAutoMerge(context.octokit, context.payload.pull_request.node_id);
         } catch (err) {
-          if (!isAutoMergeNotEnabledError(err)) {
+          if (isAutoMergeNotEnabledError(err)) {
+            // auto-merge was never enabled — proceed with label removal
+          } else {
             const msg = err instanceof Error ? err.message : String(err);
-            context.log.warn(`[PR #${number}] Failed to disable GitHub auto-merge on synchronize: ${msg}`);
+            context.log.warn(`[PR #${number}] Failed to disable GitHub auto-merge on synchronize, retaining label for retry: ${msg}`);
+            skipAutomergeRemoval = true;
           }
         }
       }
-      await prs.removeLabel(prRef, LABELS.AUTOMERGE);
+      if (!skipAutomergeRemoval) {
+        await prs.removeLabel(prRef, LABELS.AUTOMERGE);
+      }
 
       if (hadQueuedSquash) {
         await prs.comment(
@@ -415,19 +422,26 @@ export function app(probotApp: Probot): void {
         removedLabels.push(LABELS.MERGE_READY);
       }
       if (hadAutomerge) {
-        // Phase 2: disable native auto-merge before stripping the label so the two stay in sync
+        // Phase 2: disable native auto-merge before stripping the label so the two stay in sync.
+        // On unexpected error, retain the label (matching removeIfLabeled's fail-closed contract).
+        let skipAutomergeRemoval = false;
         if (repoConfig.governance.pr.automerge && !repoConfig.governance.pr.automerge.dryRun) {
           try {
             await disablePullRequestAutoMerge(context.octokit, context.payload.pull_request.node_id);
           } catch (err) {
-            if (!isAutoMergeNotEnabledError(err)) {
+            if (isAutoMergeNotEnabledError(err)) {
+              // auto-merge was never enabled — proceed with label removal
+            } else {
               const msg = err instanceof Error ? err.message : String(err);
-              context.log.warn(`[PR #${number}] Failed to disable GitHub auto-merge on converted_to_draft: ${msg}`);
+              context.log.warn(`[PR #${number}] Failed to disable GitHub auto-merge on converted_to_draft, retaining label for retry: ${msg}`);
+              skipAutomergeRemoval = true;
             }
           }
         }
-        await prs.removeLabel(prRef, LABELS.AUTOMERGE);
-        removedLabels.push(LABELS.AUTOMERGE);
+        if (!skipAutomergeRemoval) {
+          await prs.removeLabel(prRef, LABELS.AUTOMERGE);
+          removedLabels.push(LABELS.AUTOMERGE);
+        }
       }
 
       if (hadMergeReady) {
