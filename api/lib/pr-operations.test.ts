@@ -29,6 +29,7 @@ describe("createPROperations", () => {
         listCommits: vi.fn(),
         listReviewComments: vi.fn(),
         listFiles: vi.fn(),
+        requestReviewers: vi.fn(),
       },
       issues: {
         get: vi.fn(),
@@ -233,6 +234,7 @@ describe("PROperations", () => {
               head: { sha: "abc123def456" },
               mergeable: true,
               draft: false,
+              requested_reviewers: [],
             },
           }),
           update: vi.fn().mockResolvedValue({}),
@@ -240,6 +242,7 @@ describe("PROperations", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
         },
         issues: {
           get: vi.fn().mockResolvedValue({ data: { labels: [] } }),
@@ -1384,6 +1387,173 @@ describe("PROperations", () => {
 
       expect(result).toEqual([]);
       expect(mockClient.rest.pulls.listFiles).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("getReviewersAtCurrentHead", () => {
+    const HEAD_SHA = "abc123def456";
+
+    it("returns empty set when there are no reviews", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({ data: [] });
+
+      const result = await prOps.getReviewersAtCurrentHead(testRef, HEAD_SHA);
+
+      expect(result).toEqual(new Set());
+      expect(mockClient.rest.pulls.listReviews).toHaveBeenCalledWith({
+        owner: "test-org",
+        repo: "test-repo",
+        pull_number: 42,
+        per_page: 100,
+        page: 1,
+      });
+    });
+
+    it("returns reviewers who approved at the current head", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          { user: { login: "alice" }, state: "APPROVED", commit_id: HEAD_SHA },
+          { user: { login: "bob" }, state: "CHANGES_REQUESTED", commit_id: HEAD_SHA },
+        ],
+      });
+
+      const result = await prOps.getReviewersAtCurrentHead(testRef, HEAD_SHA);
+
+      expect(result).toEqual(new Set(["alice", "bob"]));
+    });
+
+    it("excludes DISMISSED reviews at the current head", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          { user: { login: "alice" }, state: "DISMISSED", commit_id: HEAD_SHA },
+        ],
+      });
+
+      const result = await prOps.getReviewersAtCurrentHead(testRef, HEAD_SHA);
+
+      // DISMISSED is a decisive state — included
+      expect(result).toEqual(new Set(["alice"]));
+    });
+
+    it("excludes COMMENTED reviews (non-decisive)", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          { user: { login: "alice" }, state: "COMMENTED", commit_id: HEAD_SHA },
+        ],
+      });
+
+      const result = await prOps.getReviewersAtCurrentHead(testRef, HEAD_SHA);
+
+      expect(result).toEqual(new Set());
+    });
+
+    it("excludes reviews at a different commit SHA", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          { user: { login: "alice" }, state: "APPROVED", commit_id: "different-sha" },
+          { user: { login: "bob" }, state: "APPROVED", commit_id: HEAD_SHA },
+        ],
+      });
+
+      const result = await prOps.getReviewersAtCurrentHead(testRef, HEAD_SHA);
+
+      expect(result).toEqual(new Set(["bob"]));
+    });
+
+    it("excludes reviews with null user", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          { user: null, state: "APPROVED", commit_id: HEAD_SHA },
+          { user: { login: "alice" }, state: "APPROVED", commit_id: HEAD_SHA },
+        ],
+      });
+
+      const result = await prOps.getReviewersAtCurrentHead(testRef, HEAD_SHA);
+
+      expect(result).toEqual(new Set(["alice"]));
+    });
+
+    it("lowercases reviewer logins", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          { user: { login: "ALICE" }, state: "APPROVED", commit_id: HEAD_SHA },
+        ],
+      });
+
+      const result = await prOps.getReviewersAtCurrentHead(testRef, HEAD_SHA);
+
+      expect(result).toEqual(new Set(["alice"]));
+    });
+
+    it("paginates until an empty page is returned", async () => {
+      const page1 = Array.from({ length: 100 }, (_, i) => ({
+        user: { login: `reviewer-${i}` },
+        state: "APPROVED",
+        commit_id: HEAD_SHA,
+      }));
+      const page2 = Array.from({ length: 100 }, (_, i) => ({
+        user: { login: `reviewer-b-${i}` },
+        state: "APPROVED",
+        commit_id: HEAD_SHA,
+      }));
+
+      vi.mocked(mockClient.rest.pulls.listReviews)
+        .mockResolvedValueOnce({ data: page1 })
+        .mockResolvedValueOnce({ data: page2 })
+        .mockResolvedValueOnce({ data: [] });
+
+      const result = await prOps.getReviewersAtCurrentHead(testRef, HEAD_SHA);
+
+      expect(result.size).toBe(200);
+      expect(mockClient.rest.pulls.listReviews).toHaveBeenCalledTimes(3);
+    });
+
+    it("stops paginating when a page returns fewer than perPage results", async () => {
+      const page1 = Array.from({ length: 100 }, (_, i) => ({
+        user: { login: `reviewer-${i}` },
+        state: "APPROVED",
+        commit_id: HEAD_SHA,
+      }));
+      const page2 = [
+        { user: { login: "last" }, state: "APPROVED", commit_id: HEAD_SHA },
+      ];
+
+      vi.mocked(mockClient.rest.pulls.listReviews)
+        .mockResolvedValueOnce({ data: page1 })
+        .mockResolvedValueOnce({ data: page2 });
+
+      const result = await prOps.getReviewersAtCurrentHead(testRef, HEAD_SHA);
+
+      expect(mockClient.rest.pulls.listReviews).toHaveBeenCalledTimes(2);
+      expect(result.size).toBe(101);
+    });
+  });
+
+  describe("requestReviewers", () => {
+    it("calls pulls.requestReviewers with the correct params", async () => {
+      await prOps.requestReviewers(testRef, ["alice", "bob"]);
+
+      expect(mockClient.rest.pulls.requestReviewers).toHaveBeenCalledWith({
+        owner: "test-org",
+        repo: "test-repo",
+        pull_number: 42,
+        reviewers: ["alice", "bob"],
+      });
+    });
+
+    it("does nothing when reviewers list is empty", async () => {
+      await prOps.requestReviewers(testRef, []);
+
+      expect(mockClient.rest.pulls.requestReviewers).not.toHaveBeenCalled();
+    });
+
+    it("passes through errors from the API", async () => {
+      vi.mocked(mockClient.rest.pulls.requestReviewers).mockRejectedValue(
+        new Error("Review cannot be requested from pull request author.")
+      );
+
+      await expect(prOps.requestReviewers(testRef, ["alice"])).rejects.toThrow(
+        "Review cannot be requested from pull request author."
+      );
     });
   });
 });
