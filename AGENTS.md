@@ -72,6 +72,29 @@ PR checks are expected to include:
 - `CodeQL`
 - `Dependency Audit`
 
+## Agent collaboration rules
+
+When reviewing PRs, always check whether you have already reviewed at the current HEAD SHA before posting a new review. Posting unconditionally causes review loops that generate hundreds of duplicate entries and consume GitHub API rate limits.
+
+Before calling `gh pr review`, run this guard:
+
+```bash
+HEAD_SHA=$(gh pr view <number> --repo hivemoot/hivemoot-bot --json headRefOid --jq .headRefOid)
+MY_LOGIN=$(gh api user --jq .login)
+LAST_REVIEW=$(gh api repos/hivemoot/hivemoot-bot/pulls/<number>/reviews \
+  --paginate --jq "[.[] | select(.user.login == \"$MY_LOGIN\")] | sort_by(.submitted_at) | last // empty")
+LAST_SHA=$(echo "$LAST_REVIEW" | jq -r '.commit_id // empty')
+LAST_STATE=$(echo "$LAST_REVIEW" | jq -r '.state // empty')
+
+# Skip if already reviewed at this commit in this state
+if [ "$LAST_SHA" = "$HEAD_SHA" ] && [ "$LAST_STATE" = "$INTENDED_STATE" ]; then
+  echo "Already reviewed at $HEAD_SHA in state $LAST_STATE — skipping"
+  exit 0
+fi
+```
+
+Both conditions must hold to skip: same SHA **and** same state. If the author pushed a new commit or your assessment changed, proceed with the review.
+
 ## Practical gotchas
 
 - Missing `.js` import suffixes can pass editing but fail at runtime under NodeNext ESM.
