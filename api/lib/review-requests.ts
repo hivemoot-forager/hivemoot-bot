@@ -18,6 +18,7 @@ import type { PRRef } from "./types.js";
 import type { PROperations } from "./pr-operations.js";
 import type { ReviewRequestsConfig } from "./repo-config.js";
 import { LABELS, isLabelMatch } from "../config.js";
+import { isCIPassing } from "./merge-readiness.js";
 import { logger } from "./logger.js";
 
 export interface ReviewRequestsParams {
@@ -68,7 +69,20 @@ export async function requestTrustedReviewers(
     return { action: "skipped", reason: "PR is not a candidate" };
   }
 
-  // 4. Get reviewers who already have a pending request (fetch from API)
+  // 4. CI must be passing — don't ping reviewers while checks are red or pending
+  try {
+    const ciPassing = await isCIPassing(prs, ref, headSha);
+    if (!ciPassing) {
+      return { action: "skipped", reason: "CI not passing" };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const warnMsg = `[PR #${ref.prNumber}] Failed to check CI status: ${msg}`;
+    if (log?.warn) { log.warn(warnMsg); } else { logger.warn(warnMsg); }
+    return { action: "skipped", reason: "could not check CI status" };
+  }
+
+  // 6. Get reviewers who already have a pending request (fetch from API)
   let requestedReviewers: Set<string>;
   try {
     const pr = await prs.get(ref);
@@ -80,7 +94,7 @@ export async function requestTrustedReviewers(
     return { action: "skipped", reason: "could not fetch PR state" };
   }
 
-  // 5. Get reviewers who have already reviewed the current head
+  // 7. Get reviewers who have already reviewed the current head
   let reviewedAtHead: Set<string>;
   try {
     reviewedAtHead = await prs.getReviewersAtCurrentHead(ref, headSha);
@@ -91,7 +105,7 @@ export async function requestTrustedReviewers(
     return { action: "skipped", reason: "could not fetch reviews" };
   }
 
-  // 6. Compute eligible set: trusted − author − pending request − reviewed at head
+  // 8. Compute eligible set: trusted − author − pending request − reviewed at head
   const authorLower = author.toLowerCase();
   const eligible = trustedReviewers.filter(
     (r) =>
@@ -104,10 +118,10 @@ export async function requestTrustedReviewers(
     return { action: "noop", reason: "no eligible reviewers" };
   }
 
-  // 7. Select up to `count` reviewers, alphabetically when need to limit
+  // 9. Select up to `count` reviewers, alphabetically when need to limit
   const toRequest = eligible.slice().sort().slice(0, config.count);
 
-  // 8. Request reviewers
+  // 10. Request reviewers
   try {
     await prs.requestReviewers(ref, toRequest);
     log?.info(`[PR #${ref.prNumber}] Requested reviewers: ${toRequest.join(", ")}`);

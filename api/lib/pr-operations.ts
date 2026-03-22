@@ -847,14 +847,15 @@ export class PROperations {
   }
 
   /**
-   * Get the set of reviewers who have submitted any decisive review at a given head SHA.
+   * Get the set of reviewers who have submitted an APPROVED or CHANGES_REQUESTED review
+   * at a given head SHA.
    *
-   * Used to exclude reviewers from auto-request when they have already reviewed
-   * the current head (regardless of their verdict). Uses pagination to handle
-   * PRs with >100 reviews.
+   * DISMISSED reviews are intentionally excluded: dismissal signals that a verdict no longer
+   * applies, so a dismissed reviewer should remain eligible for re-request at the same head.
+   * Uses pagination to handle PRs with >100 reviews.
    */
   async getReviewersAtCurrentHead(ref: PRRef, headSha: string): Promise<Set<string>> {
-    const DECISIVE_STATES = new Set(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"]);
+    const DECISIVE_STATES = new Set(["APPROVED", "CHANGES_REQUESTED"]);
     const reviewersAtHead = new Set<string>();
 
     let page = 1;

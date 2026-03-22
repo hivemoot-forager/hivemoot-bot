@@ -1421,7 +1421,7 @@ describe("PROperations", () => {
       expect(result).toEqual(new Set(["alice", "bob"]));
     });
 
-    it("excludes DISMISSED reviews at the current head", async () => {
+    it("does not exclude DISMISSED reviews — dismissed reviewer remains eligible for re-request", async () => {
       vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
         data: [
           { user: { login: "alice" }, state: "DISMISSED", commit_id: HEAD_SHA },
@@ -1430,8 +1430,8 @@ describe("PROperations", () => {
 
       const result = await prOps.getReviewersAtCurrentHead(testRef, HEAD_SHA);
 
-      // DISMISSED is a decisive state — included
-      expect(result).toEqual(new Set(["alice"]));
+      // DISMISSED means the verdict was explicitly invalidated — reviewer should remain eligible
+      expect(result).toEqual(new Set());
     });
 
     it("excludes COMMENTED reviews (non-decisive)", async () => {

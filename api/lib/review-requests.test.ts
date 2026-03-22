@@ -3,9 +3,20 @@ import { requestTrustedReviewers } from "./review-requests.js";
 import type { ReviewRequestsConfig } from "./repo-config.js";
 import { LABELS } from "../config.js";
 
+vi.mock("./merge-readiness.js", () => ({
+  isCIPassing: vi.fn().mockResolvedValue(true),
+}));
+
+import { isCIPassing } from "./merge-readiness.js";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+beforeEach(() => {
+  // Default CI state: passing. Override per-test for failure cases.
+  vi.mocked(isCIPassing).mockResolvedValue(true);
+});
 
 function makeConfig(overrides?: Partial<ReviewRequestsConfig>): ReviewRequestsConfig {
   return { count: 2, ...overrides };
@@ -364,5 +375,61 @@ describe("requestTrustedReviewers — error handling", () => {
       currentLabels: [LABELS.IMPLEMENTATION],
     });
     expect(result).toEqual({ action: "skipped", reason: "request failed" });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// requestTrustedReviewers — CI gate
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("requestTrustedReviewers — CI gate", () => {
+  it("skips when CI is not passing", async () => {
+    vi.mocked(isCIPassing).mockResolvedValue(false);
+    const prs = createMockPROperations();
+    const result = await requestTrustedReviewers({
+      prs,
+      ref: REF,
+      config: makeConfig(),
+      trustedReviewers: ["alice", "bob"],
+      author: "charlie",
+      headSha: HEAD_SHA,
+      currentLabels: [LABELS.IMPLEMENTATION],
+    });
+    expect(result).toEqual({ action: "skipped", reason: "CI not passing" });
+    expect(prs.requestReviewers).not.toHaveBeenCalled();
+  });
+
+  it("skips when isCIPassing throws", async () => {
+    vi.mocked(isCIPassing).mockRejectedValue(new Error("check-run API unavailable"));
+    const prs = createMockPROperations();
+    const result = await requestTrustedReviewers({
+      prs,
+      ref: REF,
+      config: makeConfig(),
+      trustedReviewers: ["alice"],
+      author: "charlie",
+      headSha: HEAD_SHA,
+      currentLabels: [LABELS.IMPLEMENTATION],
+    });
+    expect(result).toEqual({ action: "skipped", reason: "could not check CI status" });
+    expect(prs.requestReviewers).not.toHaveBeenCalled();
+  });
+
+  it("proceeds when CI is passing", async () => {
+    vi.mocked(isCIPassing).mockResolvedValue(true);
+    const prs = createMockPROperations({
+      get: vi.fn().mockResolvedValue({ author: "charlie", draft: false, requestedReviewers: [] }),
+    });
+    const result = await requestTrustedReviewers({
+      prs,
+      ref: REF,
+      config: makeConfig({ count: 1 }),
+      trustedReviewers: ["alice"],
+      author: "charlie",
+      headSha: HEAD_SHA,
+      currentLabels: [LABELS.IMPLEMENTATION],
+    });
+    expect(result).toEqual({ action: "requested", reviewers: ["alice"] });
+    expect(isCIPassing).toHaveBeenCalledWith(prs, REF, HEAD_SHA);
   });
 });
