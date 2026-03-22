@@ -1569,6 +1569,22 @@ describe("enablePullRequestAutoMerge", () => {
     expect(variables.commitBody).toBeNull();
   });
 
+  it("forwards expectedHeadOid when provided", async () => {
+    await enablePullRequestAutoMerge(mockClient, "PR_kwABC", "squash", {
+      expectedHeadOid: "abc123def456",
+    });
+
+    const [, variables] = vi.mocked(mockClient.graphql).mock.calls[0] as [string, Record<string, unknown>];
+    expect(variables.expectedHeadOid).toBe("abc123def456");
+  });
+
+  it("sends null for expectedHeadOid when options are absent", async () => {
+    await enablePullRequestAutoMerge(mockClient, "PR_kwABC", "squash");
+
+    const [, variables] = vi.mocked(mockClient.graphql).mock.calls[0] as [string, Record<string, unknown>];
+    expect(variables.expectedHeadOid).toBeNull();
+  });
+
   it("propagates graphql errors", async () => {
     vi.mocked(mockClient.graphql).mockRejectedValue(new Error("PullRequestAutoMergeNotAllowed"));
 
