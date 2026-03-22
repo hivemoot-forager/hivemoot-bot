@@ -26,7 +26,7 @@ export interface ReviewRequestsParams {
   ref: PRRef;
   config: ReviewRequestsConfig | null;
   trustedReviewers: string[];
-  /** PR author login (lowercased). Excluded from the eligible set. */
+  /** PR author login. Excluded from the eligible set. Normalized to lowercase internally. */
   author: string;
   /** HEAD commit SHA used to filter out reviewers who already reviewed this head. */
   headSha: string;
@@ -82,7 +82,7 @@ export async function requestTrustedReviewers(
     return { action: "skipped", reason: "could not check CI status" };
   }
 
-  // 6. Get reviewers who already have a pending request (fetch from API)
+  // 5. Get reviewers who already have a pending request (fetch from API)
   let requestedReviewers: Set<string>;
   try {
     const pr = await prs.get(ref);
