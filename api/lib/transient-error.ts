@@ -91,6 +91,10 @@ export function isAutoMergeNotEnabledError(error: unknown): boolean {
  *
  * Uses duck-typing on `.name` for the same dual-octokit-version reason as
  * `isAutoMergeNotEnabledError` above.
+ *
+ * NOTE: `errors[].type === "FORBIDDEN"` is inferred from the GitHub GraphQL schema
+ * for policy-level rejections, not confirmed from a live API response. If the hint
+ * does not fire as expected, verify the actual `type` value and update accordingly.
  */
 export function isAutoMergeNotAllowedError(error: unknown): boolean {
   if (
