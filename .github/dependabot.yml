@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Automate GitHub Actions SHA pin updates.
+  # Without this, SHA pins in workflow files go stale silently — verified
+  # on 2026-03-28 when two of four SHAs in PR #487 were already behind
+  # the current tag tip (codecov v5.5.4, codeql-action v3 bump).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      # Group all action updates into a single weekly PR to reduce noise.
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
