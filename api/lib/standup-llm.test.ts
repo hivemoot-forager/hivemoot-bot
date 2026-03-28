@@ -207,7 +207,10 @@ describe("generateStandupLLMContent", () => {
     const { generateStandupLLMContent } = await import("./standup.js");
 
     vi.mocked(createModelFromEnv).mockRejectedValue(
-      new Error("BYOK Redis lookup failed with HTTP 503"),
+      Object.assign(new Error("BYOK Redis lookup failed with HTTP 503"), {
+        installationId: 42,
+        correlationId: "test-corr-id",
+      }),
     );
 
     const data: StandupData = {
@@ -225,7 +228,7 @@ describe("generateStandupLLMContent", () => {
 
     expect(result).toBeNull();
     expect(logger.error).toHaveBeenCalledWith(
-      "LLM standup generation failed: BYOK Redis lookup failed with HTTP 503"
+      expect.stringContaining("LLM standup generation failed: BYOK Redis lookup failed with HTTP 503"),
     );
   });
 

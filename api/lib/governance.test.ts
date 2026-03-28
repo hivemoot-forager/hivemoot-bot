@@ -135,7 +135,10 @@ describe("GovernanceService", () => {
       const govWithLogger = new GovernanceService(mockIssues, mockLogger);
 
       vi.mocked(createModelFromEnv).mockRejectedValue(
-        new Error("BYOK Redis lookup failed with HTTP 503"),
+        Object.assign(new Error("BYOK Redis lookup failed with HTTP 503"), {
+          installationId: 42,
+          correlationId: "test-corr-id",
+        }),
       );
 
       await govWithLogger.transitionToVoting(testRef);
