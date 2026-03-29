@@ -180,6 +180,8 @@ governance:
       mergeMethod: squash
       allowedPaths:
         - "**"
+      denyPaths:
+        - ".github/**"
 
 standup:
   enabled: true
