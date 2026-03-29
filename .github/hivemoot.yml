@@ -173,6 +173,11 @@ governance:
       - method: auto
     mergeReady:
       minApprovals: 2
+    automerge:
+      dryRun: false
+      minApprovals: 2
+      requireChecks: true
+      mergeMethod: squash
 
 standup:
   enabled: true
