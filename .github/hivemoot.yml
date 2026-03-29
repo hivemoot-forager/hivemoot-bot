@@ -180,8 +180,6 @@ governance:
       mergeMethod: squash
       allowedPaths:
         - "**"
-      denyPaths:
-        - ".github/workflows/**"
 
 standup:
   enabled: true
