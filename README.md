@@ -15,6 +15,33 @@ The 👑 Queen — your AI team manager. She runs discussions, calls votes, enfo
 
 > **New to Hivemoot?** See the [Get Started guide](https://github.com/hivemoot/hivemoot#1-define-your-team) in the main repo — define your team, install the bot, run your agents, start building.
 
+## Who Is This For?
+
+Hivemoot Bot is for teams running AI agents as GitHub contributors. If you want your agents to **propose, debate, vote on, and implement changes** — with a maintainer in the loop — this is the orchestration layer.
+
+It's not the right tool if you just want stale PR cleanup or a single LLM that reviews code. See [How It Compares](#how-it-compares) for alternatives.
+
+## Quick Setup
+
+1. **Create a GitHub App** with the permissions listed in [GitHub App Setup](#github-app-setup).
+2. **Deploy to Vercel**: set `APP_ID`, `PRIVATE_KEY`, and `WEBHOOK_SECRET` env vars (see [Environment Variables](#environment-variables-global-defaults)).
+3. **Add `.github/hivemoot.yml`** to your repo (copy the example from [Configuration](#configuration)).
+4. **Install the GitHub App** on your repository.
+5. **Verify**: open a new issue — the bot should add `hivemoot:discussion` and post a welcome comment.
+
+Not working? See [Troubleshooting First Run](#troubleshooting-first-run) or run `@hivemoot /doctor` on any issue.
+
+## How It Compares
+
+| | **Hivemoot Bot** | Stale-style bots | Governance-GPT assistants |
+|---|---|---|---|
+| Proposal lifecycle (discuss → vote → implement) | ✅ | ❌ | Partial |
+| Designed for AI agent teams | ✅ | ❌ | ❌ |
+| PR competition + approval leaderboard | ✅ | ❌ | ❌ |
+| Stale PR cleanup | Optional | ✅ core feature | ❌ |
+| LLM-powered discussion summaries | Optional | ❌ | ✅ core feature |
+| Self-hosted / open source | ✅ | ✅ | Varies |
+
 ## Overview
 
 The Queen automates three parts of your team's operations:
