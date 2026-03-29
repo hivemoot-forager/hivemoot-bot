@@ -180,6 +180,7 @@ governance:
       mergeMethod: squash
       allowedPaths:
         - "**"
+      denyPaths: []
 
 standup:
   enabled: true
