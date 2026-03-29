@@ -932,7 +932,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     expect(mockGraphQL.graphql).not.toHaveBeenCalled();
   });
 
-  it("warns but continues when enablePullRequestAutoMerge fails (e.g., no branch protection)", async () => {
+  it("warns but continues when enablePullRequestAutoMerge fails (e.g., Allow auto-merge not enabled)", async () => {
     const config = makeConfig({ dryRun: false });
     const prs = makeEligiblePROperations();
     const mockGraphQL = {
@@ -958,12 +958,12 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     );
   });
 
-  it("includes branch protection hint only for PullRequestAutoMergeNotAllowed", async () => {
+  it("includes Allow auto-merge hint only for PullRequestAutoMergeNotAllowed", async () => {
     const config = makeConfig({ dryRun: false });
     const prs = makeEligiblePROperations();
     const warnLog = vi.fn();
 
-    // Rate limit error — should NOT get branch protection hint
+    // Rate limit error — should NOT get the Allow auto-merge hint
     const mockGraphQL = {
       graphql: vi.fn().mockRejectedValue(new Error("API rate limit exceeded")),
     };
@@ -979,7 +979,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     });
 
     expect(warnLog).toHaveBeenCalledWith(
-      expect.not.stringContaining("branch protection")
+      expect.not.stringContaining("Allow auto-merge")
     );
   });
 
