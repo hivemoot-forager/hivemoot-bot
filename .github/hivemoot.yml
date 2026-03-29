@@ -178,6 +178,8 @@ governance:
       minApprovals: 2
       requireChecks: true
       mergeMethod: squash
+      allowedPaths:
+        - "**"
 
 standup:
   enabled: true
