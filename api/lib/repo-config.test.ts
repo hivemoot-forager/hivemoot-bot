@@ -2789,6 +2789,123 @@ governance:
       });
     });
 
+    describe("reviewRequests config", () => {
+      it("should return null when reviewRequests is not configured", async () => {
+        const configYaml = `
+governance:
+  pr:
+    trustedReviewers:
+      - alice
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.reviewRequests).toBeNull();
+      });
+
+      it("should parse reviewRequests with explicit count", async () => {
+        const configYaml = `
+governance:
+  pr:
+    trustedReviewers:
+      - alice
+      - bob
+      - carol
+    reviewRequests:
+      count: 2
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.reviewRequests).toEqual({ count: 2 });
+      });
+
+      it("should default count to 1 when not specified", async () => {
+        const configYaml = `
+governance:
+  pr:
+    trustedReviewers:
+      - alice
+    reviewRequests: {}
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.reviewRequests).toEqual({ count: 1 });
+      });
+
+      it("should clamp count to max 10", async () => {
+        const configYaml = `
+governance:
+  pr:
+    trustedReviewers:
+      - alice
+    reviewRequests:
+      count: 20
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.reviewRequests).toEqual({ count: 10 });
+      });
+
+      it("should default count when value is not a number", async () => {
+        const configYaml = `
+governance:
+  pr:
+    trustedReviewers:
+      - alice
+    reviewRequests:
+      count: "bad"
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.reviewRequests).toEqual({ count: 1 });
+      });
+
+      it("should disable feature when trustedReviewers is empty", async () => {
+        const configYaml = `
+governance:
+  pr:
+    reviewRequests:
+      count: 2
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.reviewRequests).toBeNull();
+      });
+
+      it("should disable feature when reviewRequests is not an object", async () => {
+        const configYaml = `
+governance:
+  pr:
+    trustedReviewers:
+      - alice
+    reviewRequests: "enabled"
+`;
+        const octokit = createMockOctokit({
+          data: { type: "file", content: encodeBase64(configYaml), encoding: "base64" },
+        });
+
+        const config = await loadRepositoryConfig(octokit, "owner", "repo");
+        expect(config!.governance.pr!.reviewRequests).toBeNull();
+      });
+    });
+
     describe("proposals.discussion.autoGather", () => {
       it("should default to disabled when not configured", async () => {
         const configYaml = `version: 1\n`;
