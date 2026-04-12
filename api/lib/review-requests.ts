@@ -94,7 +94,7 @@ export async function requestTrustedReviewers(
     return { action: "skipped", reason: "could not fetch PR state" };
   }
 
-  // 7. Get reviewers who have already reviewed the current head
+  // 6. Get reviewers who have already reviewed the current head
   let reviewedAtHead: Set<string>;
   try {
     reviewedAtHead = await prs.getReviewersAtCurrentHead(ref, headSha);
@@ -105,7 +105,7 @@ export async function requestTrustedReviewers(
     return { action: "skipped", reason: "could not fetch reviews" };
   }
 
-  // 8. Compute eligible set: trusted − author − pending request − reviewed at head
+  // 7. Compute eligible set: trusted − author − pending request − reviewed at head
   const authorLower = author.toLowerCase();
   const eligible = trustedReviewers.filter(
     (r) =>
@@ -118,10 +118,10 @@ export async function requestTrustedReviewers(
     return { action: "noop", reason: "no eligible reviewers" };
   }
 
-  // 9. Select up to `count` reviewers, alphabetically when need to limit
+  // 8. Select up to `count` reviewers, alphabetically when need to limit
   const toRequest = eligible.slice().sort().slice(0, config.count);
 
-  // 10. Request reviewers
+  // 9. Request reviewers
   try {
     await prs.requestReviewers(ref, toRequest);
     log?.info(`[PR #${ref.prNumber}] Requested reviewers: ${toRequest.join(", ")}`);
