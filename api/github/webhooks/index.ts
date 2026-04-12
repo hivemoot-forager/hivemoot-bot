@@ -14,6 +14,7 @@ import {
   getOpenPRsForIssue,
   evaluateMergeReadiness,
   evaluateAutomerge,
+  rerequestBlockingReviewers,
 } from "../../lib/index.js";
 import {
   getLinkedIssues,
@@ -888,29 +889,46 @@ export function app(probotApp: Probot): void {
             headSha,
             log: context.log,
           });
-          // CheckSuitePullRequest omits draft and mergeable; fetch from REST so the
-          // automerge gates can fire correctly on CI completion events.
-          let prDraft: boolean | undefined;
-          let prMergeable: boolean | null | undefined;
-          let prNodeId: string | undefined;
-          if (repoConfig.governance.pr.automerge) {
-            const prState = await prs.get(prRef);
-            prDraft = prState.draft;
-            prMergeable = prState.mergeable;
-            prNodeId = prState.nodeId;
+          // CheckSuitePullRequest omits draft, labels, and mergeable; fetch from REST so
+          // the automerge and reviewer re-request gates can fire correctly on CI completion.
+          const needsFullState =
+            !!repoConfig.governance.pr.automerge ||
+            !!repoConfig.governance.pr.reviewRequests?.rerequestBlockers;
+          let suitePRState: Awaited<ReturnType<typeof prs.get>> | undefined;
+          let suiteLabels: string[] | undefined;
+          if (needsFullState) {
+            [suitePRState, suiteLabels] = await Promise.all([
+              prs.get(prRef),
+              prs.getLabels(prRef),
+            ]);
           }
           await evaluateAutomerge({
             prs,
             ref: prRef,
             config: repoConfig.governance.pr.automerge,
             trustedReviewers: repoConfig.governance.pr.trustedReviewers,
-            nodeId: prNodeId,
+            nodeId: suitePRState?.nodeId,
             headSha,
-            draft: prDraft,
-            mergeable: prMergeable,
+            draft: suitePRState?.draft,
+            mergeable: suitePRState?.mergeable,
             log: context.log,
             graphql: context.octokit,
           });
+          if (repoConfig.governance.pr.reviewRequests && suitePRState && suiteLabels) {
+            await rerequestBlockingReviewers({
+              prs,
+              ref: prRef,
+              pr: {
+                author: suitePRState.author,
+                headSha,
+                draft: suitePRState.draft,
+                state: suitePRState.state,
+                labels: suiteLabels,
+              },
+              prConfig: repoConfig.governance.pr,
+              log: context.log,
+            });
+          }
         } catch (error) {
           context.log.error({ err: error, pr: pr.number, repo: fullName }, "Failed to evaluate merge-readiness after check_suite");
           errors.push(error as Error);
@@ -965,30 +983,43 @@ export function app(probotApp: Probot): void {
             headSha,
             log: context.log,
           });
-          // CheckRunPullRequest omits draft and mergeable; fetch from REST so the
-          // automerge gates can fire correctly on CI completion events.
-          let prDraft: boolean | undefined;
-          let prMergeable: boolean | null | undefined;
-          let checkRunPRNodeId: string | undefined;
-          if (repoConfig.governance.pr.automerge) {
-            const prState = await prs.get(prRef);
-            prDraft = prState.draft;
-            prMergeable = prState.mergeable;
-            checkRunPRNodeId = prState.nodeId;
+          // CheckRunPullRequest omits draft, labels, and mergeable; fetch from REST so
+          // the automerge and reviewer re-request gates can fire correctly on CI completion.
+          const needsFullStateCR =
+            !!repoConfig.governance.pr.automerge ||
+            !!repoConfig.governance.pr.reviewRequests?.rerequestBlockers;
+          let checkRunPRState: Awaited<ReturnType<typeof prs.get>> | undefined;
+          if (needsFullStateCR) {
+            checkRunPRState = await prs.get(prRef);
           }
           await evaluateAutomerge({
             prs,
             ref: prRef,
             config: repoConfig.governance.pr.automerge,
             trustedReviewers: repoConfig.governance.pr.trustedReviewers,
-            nodeId: checkRunPRNodeId,
+            nodeId: checkRunPRState?.nodeId,
             currentLabels,
             headSha,
-            draft: prDraft,
-            mergeable: prMergeable,
+            draft: checkRunPRState?.draft,
+            mergeable: checkRunPRState?.mergeable,
             log: context.log,
             graphql: context.octokit,
           });
+          if (repoConfig.governance.pr.reviewRequests && checkRunPRState) {
+            await rerequestBlockingReviewers({
+              prs,
+              ref: prRef,
+              pr: {
+                author: checkRunPRState.author,
+                headSha,
+                draft: checkRunPRState.draft,
+                state: checkRunPRState.state,
+                labels: currentLabels, // already fetched above for merge-readiness
+              },
+              prConfig: repoConfig.governance.pr,
+              log: context.log,
+            });
+          }
 
           if (currentLabels.some((label) => isLabelMatch(label, LABELS.SQUASH_QUEUED))) {
             context.log.info(`Retrying queued squash for PR #${pr.number} after check_run in ${fullName}`);

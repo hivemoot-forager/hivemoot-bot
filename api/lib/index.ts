@@ -107,7 +107,12 @@ export type {
   MergeReadyConfig,
   AutomergeConfig,
   PRConfig,
+  ReviewRequestsConfig,
   StandupConfig,
   AutoGatherConfig,
 } from "./repo-config.js";
 export { isAutoVotingExit, isAutoDiscussionExit } from "./repo-config.js";
+
+// Blocking reviewer re-request
+export { rerequestBlockingReviewers } from "./review-rerequests.js";
+export type { RerequestBlockersParams } from "./review-rerequests.js";

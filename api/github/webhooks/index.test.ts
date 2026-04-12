@@ -766,6 +766,8 @@ describe("Queen Bot", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
         },
         checks: {
           listForRef: vi.fn().mockResolvedValue({
@@ -1229,6 +1231,8 @@ describe("Queen Bot", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
         },
         issues: {
           get: vi.fn().mockResolvedValue({ data: { reactions: { "+1": 0, "-1": 0, confused: 0 } } }),
@@ -1459,6 +1463,8 @@ describe("Queen Bot", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
         },
         issues: {
           get: vi.fn().mockResolvedValue({ data: { labels: [] } }),
@@ -1618,6 +1624,8 @@ describe("Queen Bot", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
           list: vi.fn().mockResolvedValue({ data: [] }),
         },
         issues: {
@@ -2105,6 +2113,8 @@ describe("Queen Bot", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
           list: vi.fn().mockResolvedValue({ data: [] }),
         },
         issues: {
@@ -2794,6 +2804,8 @@ describe("Queen Bot", () => {
           listCommits: vi.fn(),
           listReviewComments: vi.fn(),
           listFiles: vi.fn(),
+          requestReviewers: vi.fn(),
+          listRequestedReviewers: vi.fn(),
           list: vi.fn(),
         },
         checks: { listForRef: vi.fn() },

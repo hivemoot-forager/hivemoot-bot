@@ -165,12 +165,26 @@ export interface RepoConfigFile {
       intake?: unknown;
       mergeReady?: unknown;
       automerge?: unknown;
+      reviewRequests?: unknown;
     };
   };
   standup?: {
     enabled?: boolean;
     category?: string;
   };
+}
+
+/**
+ * Configuration for the reviewer re-request feature.
+ * Null when not configured (disabled).
+ */
+export interface ReviewRequestsConfig {
+  /**
+   * When true, re-requests trusted reviewers who have CHANGES_REQUESTED
+   * on a prior head after CI passes on a new push.
+   * Default: false
+   */
+  rerequestBlockers: boolean;
 }
 
 /**
@@ -185,6 +199,7 @@ export interface PRConfig {
   intake: IntakeMethod[];
   mergeReady: MergeReadyConfig | null;
   automerge: AutomergeConfig | null;
+  reviewRequests: ReviewRequestsConfig | null;
 }
 
 /**
@@ -1307,6 +1322,42 @@ function parseStandupConfig(
   return { enabled: true, category: obj.category.trim() };
 }
 
+/**
+ * Parse and validate reviewRequests config from the pr section.
+ *
+ * Returns null (feature disabled) when:
+ * - reviewRequests is absent, null, or undefined
+ * - reviewRequests is not an object
+ */
+function parseReviewRequestsConfig(
+  value: unknown,
+  repoFullName: string
+): ReviewRequestsConfig | null {
+  if (value === undefined || value === null) return null;
+
+  if (typeof value !== "object" || Array.isArray(value)) {
+    logger.warn(
+      `[${repoFullName}] Invalid reviewRequests config: expected object. Disabling.`
+    );
+    return null;
+  }
+
+  const obj = value as { rerequestBlockers?: unknown };
+
+  let rerequestBlockers = false;
+  if (obj.rerequestBlockers !== undefined && obj.rerequestBlockers !== null) {
+    if (typeof obj.rerequestBlockers === "boolean") {
+      rerequestBlockers = obj.rerequestBlockers;
+    } else {
+      logger.warn(
+        `[${repoFullName}] Invalid reviewRequests.rerequestBlockers: expected boolean. Defaulting to false.`
+      );
+    }
+  }
+
+  return { rerequestBlockers };
+}
+
 function deriveDiscussionDurationMs(exits: DiscussionExit[]): number {
   const autoExits = exits.filter(isAutoDiscussionExit);
   if (autoExits.length === 0) {
@@ -1356,6 +1407,7 @@ function parseRepoConfig(raw: unknown, repoFullName: string): EffectiveConfig {
     const intake = parseIntakeMethods(prConfigRaw?.intake, trustedReviewers, repoFullName);
     const mergeReady = parseMergeReadyConfig(prConfigRaw?.mergeReady, trustedReviewers, repoFullName);
     const automerge = parseAutomergeConfig(prConfigRaw?.automerge, trustedReviewers, repoFullName);
+    const reviewRequests = parseReviewRequestsConfig(prConfigRaw?.reviewRequests, repoFullName);
     pr = {
       // Stale PR cleanup is opt-in per repo: omit staleDays (or set it to null) to disable it.
       staleDays:
@@ -1367,6 +1419,7 @@ function parseRepoConfig(raw: unknown, repoFullName: string): EffectiveConfig {
       intake,
       mergeReady,
       automerge,
+      reviewRequests,
     };
   }
 

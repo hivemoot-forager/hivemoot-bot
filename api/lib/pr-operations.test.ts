@@ -29,6 +29,8 @@ describe("createPROperations", () => {
         listCommits: vi.fn(),
         listReviewComments: vi.fn(),
         listFiles: vi.fn(),
+        requestReviewers: vi.fn(),
+        listRequestedReviewers: vi.fn(),
       },
       issues: {
         get: vi.fn(),
@@ -240,6 +242,8 @@ describe("PROperations", () => {
           listCommits: vi.fn().mockResolvedValue({ data: [] }),
           listReviewComments: vi.fn().mockResolvedValue({ data: [] }),
           listFiles: vi.fn().mockResolvedValue({ data: [] }),
+          requestReviewers: vi.fn().mockResolvedValue({}),
+          listRequestedReviewers: vi.fn().mockResolvedValue({ data: { users: [] } }),
         },
         issues: {
           get: vi.fn().mockResolvedValue({ data: { labels: [] } }),
@@ -1383,6 +1387,159 @@ describe("PROperations", () => {
 
       expect(result).toEqual([]);
       expect(mockClient.rest.pulls.listFiles).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("requestReviewers", () => {
+    it("should call requestReviewers with given reviewers", async () => {
+      await prOps.requestReviewers(testRef, ["alice", "bob"]);
+
+      expect(mockClient.rest.pulls.requestReviewers).toHaveBeenCalledWith({
+        owner: testRef.owner,
+        repo: testRef.repo,
+        pull_number: testRef.prNumber,
+        reviewers: ["alice", "bob"],
+      });
+    });
+
+    it("should no-op when reviewers list is empty", async () => {
+      await prOps.requestReviewers(testRef, []);
+
+      expect(mockClient.rest.pulls.requestReviewers).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("getRequestedReviewers", () => {
+    it("should return lowercase set of pending reviewer logins", async () => {
+      vi.mocked(mockClient.rest.pulls.listRequestedReviewers).mockResolvedValue({
+        data: { users: [{ login: "Alice" }, { login: "BOB" }] },
+      });
+
+      const result = await prOps.getRequestedReviewers(testRef);
+
+      expect(result).toEqual(new Set(["alice", "bob"]));
+    });
+
+    it("should return empty set when no pending requests", async () => {
+      vi.mocked(mockClient.rest.pulls.listRequestedReviewers).mockResolvedValue({
+        data: { users: [] },
+      });
+
+      const result = await prOps.getRequestedReviewers(testRef);
+
+      expect(result).toEqual(new Set());
+    });
+  });
+
+  describe("getBlockingReviewers", () => {
+    const headSha = "new-sha-789";
+    const priorSha = "old-sha-123";
+    const trustedReviewers = ["alice", "bob", "carol"];
+
+    it("should return reviewer with CHANGES_REQUESTED on prior head", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          {
+            user: { login: "alice" },
+            state: "CHANGES_REQUESTED",
+            submitted_at: "2024-01-10T10:00:00Z",
+            commit_id: priorSha,
+          },
+        ],
+      });
+
+      const result = await prOps.getBlockingReviewers(testRef, headSha, trustedReviewers);
+
+      expect(result).toEqual(new Set(["alice"]));
+    });
+
+    it("should NOT include reviewer with CHANGES_REQUESTED on current head", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          {
+            user: { login: "alice" },
+            state: "CHANGES_REQUESTED",
+            submitted_at: "2024-01-10T10:00:00Z",
+            commit_id: headSha,
+          },
+        ],
+      });
+
+      const result = await prOps.getBlockingReviewers(testRef, headSha, trustedReviewers);
+
+      expect(result).toEqual(new Set());
+    });
+
+    it("should NOT include reviewer whose latest decisive review is APPROVED", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          {
+            user: { login: "alice" },
+            state: "CHANGES_REQUESTED",
+            submitted_at: "2024-01-10T08:00:00Z",
+            commit_id: priorSha,
+          },
+          {
+            user: { login: "alice" },
+            state: "APPROVED",
+            submitted_at: "2024-01-10T10:00:00Z",
+            commit_id: priorSha,
+          },
+        ],
+      });
+
+      const result = await prOps.getBlockingReviewers(testRef, headSha, trustedReviewers);
+
+      expect(result).toEqual(new Set());
+    });
+
+    it("should only include trusted reviewers", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          {
+            user: { login: "outsider" },
+            state: "CHANGES_REQUESTED",
+            submitted_at: "2024-01-10T10:00:00Z",
+            commit_id: priorSha,
+          },
+        ],
+      });
+
+      const result = await prOps.getBlockingReviewers(testRef, headSha, trustedReviewers);
+
+      expect(result).toEqual(new Set());
+    });
+
+    it("should normalise reviewer login to lowercase", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          {
+            user: { login: "ALICE" },
+            state: "CHANGES_REQUESTED",
+            submitted_at: "2024-01-10T10:00:00Z",
+            commit_id: priorSha,
+          },
+        ],
+      });
+
+      const result = await prOps.getBlockingReviewers(testRef, headSha, ["ALICE"]);
+
+      expect(result).toEqual(new Set(["alice"]));
+    });
+
+    it("should return empty set when no reviews exist", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({ data: [] });
+
+      const result = await prOps.getBlockingReviewers(testRef, headSha, trustedReviewers);
+
+      expect(result).toEqual(new Set());
+    });
+
+    it("should return empty set when trustedReviewers is empty", async () => {
+      const result = await prOps.getBlockingReviewers(testRef, headSha, []);
+
+      expect(mockClient.rest.pulls.listReviews).not.toHaveBeenCalled();
+      expect(result).toEqual(new Set());
     });
   });
 });

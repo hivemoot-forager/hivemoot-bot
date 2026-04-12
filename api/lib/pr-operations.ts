@@ -55,7 +55,26 @@ export interface PRClient {
           state: string;
           user: { login: string } | null;
           submitted_at: string;
+          /** SHA of the commit the review was submitted against. Present in the real API but optional here for test flexibility. */
+          commit_id?: string;
         }>;
+      }>;
+
+      requestReviewers: (params: {
+        owner: string;
+        repo: string;
+        pull_number: number;
+        reviewers: string[];
+      }) => Promise<unknown>;
+
+      listRequestedReviewers: (params: {
+        owner: string;
+        repo: string;
+        pull_number: number;
+      }) => Promise<{
+        data: {
+          users: Array<{ login: string }>;
+        };
       }>;
 
       listCommits: (params: {
@@ -831,5 +850,101 @@ export class PROperations {
     }
 
     return false;
+  }
+
+  /**
+   * Request a set of reviewers on a PR.
+   *
+   * GitHub deduplicates review requests server-side — calling this with a
+   * reviewer who already has a pending request is a safe no-op.
+   */
+  async requestReviewers(ref: PRRef, reviewers: string[]): Promise<void> {
+    if (reviewers.length === 0) return;
+    await this.client.rest.pulls.requestReviewers({
+      owner: ref.owner,
+      repo: ref.repo,
+      pull_number: ref.prNumber,
+      reviewers,
+    });
+  }
+
+  /**
+   * Get the set of reviewers who have a pending review request on this PR.
+   */
+  async getRequestedReviewers(ref: PRRef): Promise<Set<string>> {
+    const { data } = await this.client.rest.pulls.listRequestedReviewers({
+      owner: ref.owner,
+      repo: ref.repo,
+      pull_number: ref.prNumber,
+    });
+    return new Set(data.users.map((u) => u.login.toLowerCase()));
+  }
+
+  /**
+   * Get the set of trusted reviewers who have submitted CHANGES_REQUESTED
+   * on a commit other than the current head SHA.
+   *
+   * These are reviewers who blocked a prior version of the PR but have not
+   * yet reviewed the current head — eligible for re-request after the author
+   * addresses their feedback.
+   *
+   * Uses pagination to handle PRs with >100 reviews.
+   */
+  async getBlockingReviewers(
+    ref: PRRef,
+    headSha: string,
+    trustedReviewers: string[]
+  ): Promise<Set<string>> {
+    if (trustedReviewers.length === 0) return new Set();
+
+    const trusted = new Set(trustedReviewers.map((r) => r.toLowerCase()));
+
+    // Track each trusted reviewer's latest decisive review
+    const latestReview = new Map<
+      string,
+      { state: string; commitId: string | undefined; submittedAt: Date }
+    >();
+
+    let page = 1;
+    const perPage = 100;
+
+    while (true) {
+      const { data: reviews } = await this.client.rest.pulls.listReviews({
+        owner: ref.owner,
+        repo: ref.repo,
+        pull_number: ref.prNumber,
+        per_page: perPage,
+        page,
+      });
+
+      if (reviews.length === 0) break;
+
+      for (const review of reviews) {
+        if (!review.user) continue;
+        const login = review.user.login.toLowerCase();
+        if (!trusted.has(login)) continue;
+        // Only track APPROVED and CHANGES_REQUESTED; skip COMMENTED, DISMISSED, PENDING
+        if (review.state !== "APPROVED" && review.state !== "CHANGES_REQUESTED") continue;
+
+        const submittedAt = new Date(review.submitted_at);
+        const existing = latestReview.get(login);
+        if (!existing || submittedAt > existing.submittedAt) {
+          latestReview.set(login, { state: review.state, commitId: review.commit_id, submittedAt });
+        }
+      }
+
+      if (reviews.length < perPage) break;
+      page++;
+    }
+
+    // A reviewer is "blocking" if their latest decisive review is CHANGES_REQUESTED
+    // on a commit other than the current head — they blocked a prior version.
+    const blocking = new Set<string>();
+    for (const [login, { state, commitId }] of latestReview) {
+      if (state === "CHANGES_REQUESTED" && commitId !== headSha) {
+        blocking.add(login);
+      }
+    }
+    return blocking;
   }
 }
