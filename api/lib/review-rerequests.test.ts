@@ -49,6 +49,7 @@ function makePRSpy(overrides: Partial<PROperations> = {}): PROperations {
     getBlockingReviewers: vi.fn().mockResolvedValue(new Set(["alice"])),
     getRequestedReviewers: vi.fn().mockResolvedValue(new Set()),
     requestReviewers: vi.fn().mockResolvedValue(undefined),
+    isCollaborator: vi.fn().mockResolvedValue(true),
     getCheckRunsForRef: vi.fn().mockResolvedValue({
       totalCount: 1,
       checkRuns: [{ id: 1, status: "completed", conclusion: "success" }],
@@ -227,5 +228,89 @@ describe("rerequestBlockingReviewers", () => {
     });
 
     expect(prs.requestReviewers).not.toHaveBeenCalled();
+  });
+
+  it("skips non-collaborator reviewers and still requests confirmed collaborators", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const prs = makePRSpy({
+      getBlockingReviewers: vi.fn().mockResolvedValue(new Set(["alice", "outsider"])),
+      // alice is a collaborator; outsider is not
+      isCollaborator: vi.fn().mockImplementation((_ref, username: string) =>
+        Promise.resolve(username !== "outsider")
+      ),
+    });
+
+    await rerequestBlockingReviewers({
+      prs,
+      ref: testRef,
+      pr: makePR(),
+      prConfig: makeConfig(true, ["alice", "outsider"]),
+      log,
+    });
+
+    // Only the collaborator is requested
+    expect(prs.requestReviewers).toHaveBeenCalledWith(testRef, ["alice"]);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("outsider"));
+  });
+
+  it("no-ops when all blocking reviewers fail the collaborator check", async () => {
+    const prs = makePRSpy({
+      isCollaborator: vi.fn().mockResolvedValue(false),
+    });
+
+    await rerequestBlockingReviewers({
+      prs,
+      ref: testRef,
+      pr: makePR(),
+      prConfig: makeConfig(true),
+    });
+
+    expect(prs.requestReviewers).not.toHaveBeenCalled();
+  });
+
+  it("logs a warning and does not throw when requestReviewers fails", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const prs = makePRSpy({
+      requestReviewers: vi.fn().mockRejectedValue(new Error("422 Unprocessable Entity")),
+    });
+
+    // Should not throw
+    await expect(
+      rerequestBlockingReviewers({
+        prs,
+        ref: testRef,
+        pr: makePR(),
+        prConfig: makeConfig(true),
+        log,
+      })
+    ).resolves.toBeUndefined();
+
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to re-request reviewers")
+    );
+  });
+
+  it("logs a warning and continues when isCollaborator throws a transient error", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const prs = makePRSpy({
+      getBlockingReviewers: vi.fn().mockResolvedValue(new Set(["alice", "bob"])),
+      // alice throws a transient error; bob is a confirmed collaborator
+      isCollaborator: vi.fn().mockImplementation((_ref, username: string) => {
+        if (username === "alice") return Promise.reject(new Error("API timeout"));
+        return Promise.resolve(true);
+      }),
+    });
+
+    await rerequestBlockingReviewers({
+      prs,
+      ref: testRef,
+      pr: makePR(),
+      prConfig: makeConfig(true, ["alice", "bob"]),
+      log,
+    });
+
+    // bob still gets requested despite alice's transient error
+    expect(prs.requestReviewers).toHaveBeenCalledWith(testRef, ["bob"]);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("alice"));
   });
 });

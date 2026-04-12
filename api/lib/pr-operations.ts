@@ -216,6 +216,12 @@ export interface PRClient {
           }>;
         };
       }>;
+
+      getCollaboratorPermissionLevel: (params: {
+        owner: string;
+        repo: string;
+        username: string;
+      }) => Promise<{ data: { permission: string } }>;
     };
   };
 }
@@ -946,5 +952,33 @@ export class PROperations {
       }
     }
     return blocking;
+  }
+
+  /**
+   * Check whether `username` is a collaborator on the repository.
+   *
+   * Returns `true` when the API confirms collaborator status, `false` on 404
+   * (not a collaborator). Re-throws on any other error so the caller can
+   * distinguish a genuine "not a collaborator" result from a transient API
+   * failure.
+   *
+   * Used to pre-filter reviewer candidates before batching a requestReviewers
+   * call — GitHub rejects the entire batch with 422 if any login is not a
+   * collaborator.
+   */
+  async isCollaborator(ref: PRRef, username: string): Promise<boolean> {
+    try {
+      await this.client.rest.repos.getCollaboratorPermissionLevel({
+        owner: ref.owner,
+        repo: ref.repo,
+        username,
+      });
+      return true;
+    } catch (err) {
+      if (getErrorStatus(err) === 404) {
+        return false;
+      }
+      throw err;
+    }
   }
 }

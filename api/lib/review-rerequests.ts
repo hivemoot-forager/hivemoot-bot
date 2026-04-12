@@ -96,10 +96,34 @@ export async function rerequestBlockingReviewers(
   }
   if (blocking.size === 0) return;
 
-  // 10. Request the eligible blockers (alphabetical for determinism)
-  const toRequest = [...blocking].sort();
+  // 10. Pre-filter: only request confirmed collaborators to avoid a 422 batch rejection
+  const toRequest: string[] = [];
+  for (const reviewer of [...blocking].sort()) {
+    try {
+      if (await prs.isCollaborator(ref, reviewer)) {
+        toRequest.push(reviewer);
+      } else {
+        log?.warn(
+          `[PR #${ref.prNumber}] Skipping re-request for ${reviewer}: not a collaborator`
+        );
+      }
+    } catch (err) {
+      log?.warn(
+        `[PR #${ref.prNumber}] Could not verify collaborator status for ${reviewer}: ${String(err)}`
+      );
+    }
+  }
+  if (toRequest.length === 0) return;
+
+  // 11. Request the eligible blockers
   log?.info(
     `[PR #${ref.prNumber}] Re-requesting ${toRequest.length} blocking reviewer(s) after push: ${toRequest.join(", ")}`
   );
-  await prs.requestReviewers(ref, toRequest);
+  try {
+    await prs.requestReviewers(ref, toRequest);
+  } catch (err) {
+    log?.warn(
+      `[PR #${ref.prNumber}] Failed to re-request reviewers: ${String(err)}`
+    );
+  }
 }
