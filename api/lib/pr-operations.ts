@@ -683,9 +683,15 @@ export class PROperations {
    *
    * Decisive reviews are: APPROVED, CHANGES_REQUESTED, DISMISSED.
    * COMMENTED reviews don't change approval status.
+   *
+   * Note: DISMISSED is intentionally included here because a dismissed review
+   * removes a prior APPROVED verdict — a dismissed approver should not count as
+   * an active approver for merge-readiness. Contrast with `getReviewersAtCurrentHead`,
+   * which intentionally excludes DISMISSED so that dismissed reviewers remain eligible
+   * for re-request at the same head.
    */
   async getApproverLogins(ref: PRRef): Promise<Set<string>> {
-    const DECISIVE_STATES = new Set(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"]);
+    const DECISIVE_STATES = new Set(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"]); // includes DISMISSED — see JSDoc
 
     // Track each user's latest decisive review
     const latestDecisiveReview = new Map<string, { state: string; submittedAt: Date }>();
