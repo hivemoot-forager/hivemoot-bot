@@ -1153,6 +1153,18 @@ export function app(probotApp: Probot): void {
             log: context.log,
             graphql: context.octokit,
           });
+          // pulls.list includes user.login and draft, so no extra fetch needed here.
+          await requestTrustedReviewers({
+            prs,
+            ref: { owner, repo, prNumber: pr.number },
+            config: repoConfig.governance.pr.reviewRequests,
+            trustedReviewers: repoConfig.governance.pr.trustedReviewers,
+            author: pr.user?.login ?? "unknown",
+            headSha: sha,
+            currentLabels,
+            draft: pr.draft,
+            log: context.log,
+          });
 
           if (currentLabels.some((label) => isLabelMatch(label, LABELS.SQUASH_QUEUED))) {
             context.log.info(`Retrying queued squash for PR #${pr.number} after status event in ${fullName}`);

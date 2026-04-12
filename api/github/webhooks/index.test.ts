@@ -5,6 +5,7 @@ import { createIssueOperations } from "../../lib/github-client.js";
 import { getLinkedIssues, getOpenPRsForIssue, disablePullRequestAutoMerge } from "../../lib/graphql-queries.js";
 import { processImplementationIntake, recalculateLeaderboardForPR } from "../../lib/implementation-intake.js";
 import { evaluateMergeReadiness, evaluateAutomerge, loadRepositoryConfig } from "../../lib/index.js";
+import { requestTrustedReviewers } from "../../lib/review-requests.js";
 import { LABELS, MESSAGES, REQUIRED_REPOSITORY_LABELS } from "../../config.js";
 import type { IssueRef } from "../../lib/types.js";
 import type { IncomingMessage, ServerResponse } from "http";
@@ -36,6 +37,10 @@ vi.mock("../../lib/graphql-queries.js", async (importOriginal) => {
     disablePullRequestAutoMerge: vi.fn().mockResolvedValue(undefined),
   };
 });
+
+vi.mock("../../lib/review-requests.js", () => ({
+  requestTrustedReviewers: vi.fn().mockResolvedValue({ action: "skipped", reason: "noop" }),
+}));
 
 vi.mock("../../lib/implementation-intake.js", () => ({
   processImplementationIntake: vi.fn().mockResolvedValue(undefined),
@@ -1671,6 +1676,7 @@ describe("Queen Bot", () => {
       vi.mocked(recalculateLeaderboardForPR).mockReset();
       vi.mocked(evaluateMergeReadiness).mockReset();
       vi.mocked(evaluateAutomerge).mockReset();
+      vi.mocked(requestTrustedReviewers).mockReset().mockResolvedValue({ action: "skipped", reason: "noop" });
       vi.mocked(getLinkedIssues).mockReset();
       vi.mocked(loadRepositoryConfig).mockReset();
     });
@@ -2089,6 +2095,47 @@ describe("Queen Bot", () => {
 
       expect(evaluateAutomerge).toHaveBeenCalledWith(
         expect.objectContaining({ draft: false, mergeable: false, graphql: expect.anything() })
+      );
+    });
+
+    it("should call requestTrustedReviewers with author and draft from pulls.list on status event", async () => {
+      const { handlers } = createWebhookHarness();
+      const reviewRequestsConfig = {
+        governance: {
+          proposals: { discussion: { exits: [{ type: "manual" }], durationMs: 0 } },
+          pr: {
+            maxPRsPerIssue: 3,
+            trustedReviewers: ["alice", "bob"],
+            intake: {},
+            mergeReady: null,
+            automerge: null,
+            reviewRequests: { count: 1 },
+          },
+        },
+      };
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(reviewRequestsConfig as any);
+
+      const octokit = createPRGuardOctokit();
+      octokit.rest.pulls.list = vi.fn().mockResolvedValue({
+        data: [{ number: 42, head: { sha: "deadbeef" }, draft: false, user: { login: "prauthor" } }],
+      });
+
+      await handlers.get("status")!({
+        octokit,
+        log: mkLog(),
+        payload: {
+          sha: "deadbeef",
+          repository: testRepo,
+        },
+      });
+
+      expect(requestTrustedReviewers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          author: "prauthor",
+          draft: false,
+          headSha: "deadbeef",
+          config: { count: 1 },
+        })
       );
     });
   });
