@@ -44,6 +44,7 @@ describe("createPROperations", () => {
       },
       repos: {
         getCombinedStatusForRef: vi.fn(),
+        getCollaboratorPermissionLevel: vi.fn(),
       },
     },
   });
@@ -257,6 +258,7 @@ describe("PROperations", () => {
         },
         repos: {
           getCombinedStatusForRef: vi.fn().mockResolvedValue({ data: { state: "pending", total_count: 0, statuses: [] } }),
+          getCollaboratorPermissionLevel: vi.fn().mockResolvedValue({ data: { permission: "write" } }),
         },
       },
     } as unknown as PRClient;
@@ -1570,6 +1572,42 @@ describe("PROperations", () => {
       await expect(prOps.requestReviewers(testRef, ["alice"])).rejects.toThrow(
         "Review cannot be requested from pull request author."
       );
+    });
+  });
+
+  describe("isCollaborator", () => {
+    it("returns true when getCollaboratorPermissionLevel succeeds", async () => {
+      vi.mocked(mockClient.rest.repos.getCollaboratorPermissionLevel).mockResolvedValue({
+        data: { permission: "write" },
+      });
+
+      const result = await prOps.isCollaborator(testRef, "alice");
+
+      expect(result).toBe(true);
+      expect(mockClient.rest.repos.getCollaboratorPermissionLevel).toHaveBeenCalledWith({
+        owner: "test-org",
+        repo: "test-repo",
+        username: "alice",
+      });
+    });
+
+    it("returns false when the API throws (non-collaborator 404)", async () => {
+      const err = Object.assign(new Error("Not Found"), { status: 404 });
+      vi.mocked(mockClient.rest.repos.getCollaboratorPermissionLevel).mockRejectedValue(err);
+
+      const result = await prOps.isCollaborator(testRef, "ex-employee");
+
+      expect(result).toBe(false);
+    });
+
+    it("returns false on any API error (defensive fallback)", async () => {
+      vi.mocked(mockClient.rest.repos.getCollaboratorPermissionLevel).mockRejectedValue(
+        new Error("Service unavailable")
+      );
+
+      const result = await prOps.isCollaborator(testRef, "alice");
+
+      expect(result).toBe(false);
     });
   });
 });

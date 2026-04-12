@@ -119,9 +119,27 @@ export async function requestTrustedReviewers(
   }
 
   // 8. Select up to `count` reviewers, alphabetically when need to limit
-  const toRequest = eligible.slice().sort().slice(0, config.count);
+  const candidates = eligible.slice().sort().slice(0, config.count);
 
-  // 9. Request reviewers
+  // 9. Pre-filter to actual collaborators.
+  // POST /requested_reviewers rejects the entire batch with 422 if any login is not a
+  // repo collaborator — there is no partial success. Filter each candidate individually
+  // so one stale config entry doesn't suppress valid reviewer requests.
+  const toRequest: string[] = [];
+  for (const login of candidates) {
+    if (await prs.isCollaborator(ref, login)) {
+      toRequest.push(login);
+    } else {
+      const warnMsg = `[PR #${ref.prNumber}] Skipping ${login}: not a repo collaborator`;
+      if (log?.warn) { log.warn(warnMsg); } else { logger.warn(warnMsg); }
+    }
+  }
+
+  if (toRequest.length === 0) {
+    return { action: "noop", reason: "no eligible collaborator reviewers" };
+  }
+
+  // 10. Request reviewers
   try {
     await prs.requestReviewers(ref, toRequest);
     log?.info(`[PR #${ref.prNumber}] Requested reviewers: ${toRequest.join(", ")}`);

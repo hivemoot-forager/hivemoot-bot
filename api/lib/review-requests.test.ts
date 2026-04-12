@@ -35,6 +35,8 @@ function createMockPROperations(overrides?: Record<string, unknown>) {
     }),
     getReviewersAtCurrentHead: vi.fn().mockResolvedValue(new Set<string>()),
     requestReviewers: vi.fn().mockResolvedValue(undefined),
+    // Default: all logins are collaborators. Override per-test for non-collaborator cases.
+    isCollaborator: vi.fn().mockResolvedValue(true),
     ...overrides,
   } as any;
 }
@@ -431,5 +433,71 @@ describe("requestTrustedReviewers — CI gate", () => {
     });
     expect(result).toEqual({ action: "requested", reviewers: ["alice"] });
     expect(isCIPassing).toHaveBeenCalledWith(prs, REF, HEAD_SHA);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// requestTrustedReviewers — non-collaborator pre-filter
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("requestTrustedReviewers — non-collaborator pre-filter", () => {
+  it("skips non-collaborators and still requests valid reviewers", async () => {
+    const prs = createMockPROperations({
+      get: vi.fn().mockResolvedValue({ author: "frank", draft: false, requestedReviewers: [] }),
+      // alice is a collaborator, ex-employee is not
+      isCollaborator: vi.fn().mockImplementation((_ref: unknown, login: string) =>
+        Promise.resolve(login === "alice")
+      ),
+    });
+    const result = await requestTrustedReviewers({
+      prs,
+      ref: REF,
+      config: makeConfig({ count: 2 }),
+      trustedReviewers: ["alice", "ex-employee"],
+      author: "frank",
+      headSha: HEAD_SHA,
+      currentLabels: [LABELS.IMPLEMENTATION],
+    });
+    expect(result).toEqual({ action: "requested", reviewers: ["alice"] });
+    expect(prs.requestReviewers).toHaveBeenCalledWith(REF, ["alice"]);
+  });
+
+  it("returns noop when all candidates are non-collaborators", async () => {
+    const prs = createMockPROperations({
+      get: vi.fn().mockResolvedValue({ author: "frank", draft: false, requestedReviewers: [] }),
+      isCollaborator: vi.fn().mockResolvedValue(false),
+    });
+    const result = await requestTrustedReviewers({
+      prs,
+      ref: REF,
+      config: makeConfig({ count: 2 }),
+      trustedReviewers: ["alice", "bob"],
+      author: "frank",
+      headSha: HEAD_SHA,
+      currentLabels: [LABELS.IMPLEMENTATION],
+    });
+    expect(result).toEqual({ action: "noop", reason: "no eligible collaborator reviewers" });
+    expect(prs.requestReviewers).not.toHaveBeenCalled();
+  });
+
+  it("requests all valid collaborators when count exceeds eligible after filtering", async () => {
+    const prs = createMockPROperations({
+      get: vi.fn().mockResolvedValue({ author: "frank", draft: false, requestedReviewers: [] }),
+      // only charlie is a collaborator out of three candidates
+      isCollaborator: vi.fn().mockImplementation((_ref: unknown, login: string) =>
+        Promise.resolve(login === "charlie")
+      ),
+    });
+    const result = await requestTrustedReviewers({
+      prs,
+      ref: REF,
+      config: makeConfig({ count: 3 }),
+      trustedReviewers: ["alice", "bob", "charlie"],
+      author: "frank",
+      headSha: HEAD_SHA,
+      currentLabels: [LABELS.IMPLEMENTATION],
+    });
+    expect(result).toEqual({ action: "requested", reviewers: ["charlie"] });
+    expect(prs.requestReviewers).toHaveBeenCalledWith(REF, ["charlie"]);
   });
 });
