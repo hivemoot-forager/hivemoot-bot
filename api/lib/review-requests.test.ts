@@ -500,4 +500,60 @@ describe("requestTrustedReviewers — non-collaborator pre-filter", () => {
     expect(result).toEqual({ action: "requested", reviewers: ["charlie"] });
     expect(prs.requestReviewers).toHaveBeenCalledWith(REF, ["charlie"]);
   });
+
+  it("fills up to count from the full eligible list when an earlier entry fails the collaborator check", async () => {
+    // Regression for slice-before-filter bug: alice sorts first but is not a collaborator.
+    // With the old code, alice consumed the first slot of a count:1 slice and charlie was never
+    // reached. With the fix, the loop walks the full sorted list and collects up to count
+    // valid collaborators regardless of non-collaborator gaps earlier in the list.
+    const prs = createMockPROperations({
+      get: vi.fn().mockResolvedValue({ author: "frank", draft: false, requestedReviewers: [] }),
+      isCollaborator: vi.fn().mockImplementation((_ref: unknown, login: string) =>
+        // alice is stale; bob and charlie are valid collaborators
+        Promise.resolve(login !== "alice")
+      ),
+    });
+    const result = await requestTrustedReviewers({
+      prs,
+      ref: REF,
+      config: makeConfig({ count: 2 }),
+      trustedReviewers: ["alice", "bob", "charlie"],
+      author: "frank",
+      headSha: HEAD_SHA,
+      currentLabels: [LABELS.IMPLEMENTATION],
+    });
+    // Should collect bob and charlie (count=2), not just bob (count=1 after alice is skipped)
+    expect(result).toEqual({ action: "requested", reviewers: ["bob", "charlie"] });
+    expect(prs.requestReviewers).toHaveBeenCalledWith(REF, ["bob", "charlie"]);
+  });
+
+  it("skips a candidate on transient isCollaborator error and continues to next candidate", async () => {
+    // When isCollaborator throws a non-404 (e.g. 429 rate limit), the candidate is skipped
+    // with a "could not verify" warning rather than a misleading "not a collaborator" message.
+    // The loop continues and collects valid collaborators from the remaining candidates.
+    const prs = createMockPROperations({
+      get: vi.fn().mockResolvedValue({ author: "frank", draft: false, requestedReviewers: [] }),
+      isCollaborator: vi.fn().mockImplementation((_ref: unknown, login: string) => {
+        if (login === "alice") {
+          return Promise.reject(Object.assign(new Error("API rate limit exceeded"), { status: 429 }));
+        }
+        return Promise.resolve(true);
+      }),
+    });
+    const warnLog = vi.fn();
+    const result = await requestTrustedReviewers({
+      prs,
+      ref: REF,
+      config: makeConfig({ count: 2 }),
+      trustedReviewers: ["alice", "bob"],
+      author: "frank",
+      headSha: HEAD_SHA,
+      currentLabels: [LABELS.IMPLEMENTATION],
+      log: { info: vi.fn(), warn: warnLog },
+    });
+    // alice skipped due to transient error, bob collected
+    expect(result).toEqual({ action: "requested", reviewers: ["bob"] });
+    expect(warnLog).toHaveBeenCalledWith(expect.stringContaining("Could not verify collaborator status for alice"));
+    expect(warnLog).not.toHaveBeenCalledWith(expect.stringContaining("not a repo collaborator"));
+  });
 });

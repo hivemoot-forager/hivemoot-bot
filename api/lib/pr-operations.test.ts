@@ -1600,14 +1600,11 @@ describe("PROperations", () => {
       expect(result).toBe(false);
     });
 
-    it("returns false on any API error (defensive fallback)", async () => {
-      vi.mocked(mockClient.rest.repos.getCollaboratorPermissionLevel).mockRejectedValue(
-        new Error("Service unavailable")
-      );
+    it("rethrows non-404 errors so callers can distinguish transient failures from non-member status", async () => {
+      const rateLimitErr = Object.assign(new Error("API rate limit exceeded"), { status: 429 });
+      vi.mocked(mockClient.rest.repos.getCollaboratorPermissionLevel).mockRejectedValue(rateLimitErr);
 
-      const result = await prOps.isCollaborator(testRef, "alice");
-
-      expect(result).toBe(false);
+      await expect(prOps.isCollaborator(testRef, "alice")).rejects.toThrow("API rate limit exceeded");
     });
   });
 });

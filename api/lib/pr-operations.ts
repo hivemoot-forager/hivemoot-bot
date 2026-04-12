@@ -925,7 +925,11 @@ export class PROperations {
   /**
    * Check whether a user is a collaborator on the repository.
    *
-   * Returns false for non-collaborators (GitHub 404) and on any API error.
+   * Returns false for non-collaborators (GitHub 404). Re-throws for other errors
+   * (rate limit, server error, network failure) so callers can distinguish a
+   * genuine "not a collaborator" result from a transient API failure — the two
+   * cases require different log messages and may need different handling.
+   *
    * Used to pre-filter reviewer candidates before batching a requestReviewers call —
    * GitHub rejects the entire batch with 422 if any login is not a collaborator.
    */
@@ -937,8 +941,11 @@ export class PROperations {
         username,
       });
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      if (getErrorStatus(err) === 404) {
+        return false;
+      }
+      throw err;
     }
   }
 }

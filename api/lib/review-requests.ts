@@ -118,19 +118,27 @@ export async function requestTrustedReviewers(
     return { action: "noop", reason: "no eligible reviewers" };
   }
 
-  // 8. Select up to `count` reviewers, alphabetically when need to limit
-  const candidates = eligible.slice().sort().slice(0, config.count);
-
-  // 9. Pre-filter to actual collaborators.
-  // POST /requested_reviewers rejects the entire batch with 422 if any login is not a
-  // repo collaborator — there is no partial success. Filter each candidate individually
-  // so one stale config entry doesn't suppress valid reviewer requests.
+  // 8-9. Walk the full sorted eligible list and collect up to `count` collaborators.
+  // The collaborator check must happen *before* applying the count cap — slicing first
+  // and filtering after can under-deliver: an alphabetically-earlier stale entry
+  // consumes a slot and prevents a valid candidate further down from being reached.
+  // POST /requested_reviewers rejects the entire batch with 422 if any login lacks
+  // repo access, so we validate each candidate individually.
+  const sorted = eligible.slice().sort();
   const toRequest: string[] = [];
-  for (const login of candidates) {
-    if (await prs.isCollaborator(ref, login)) {
-      toRequest.push(login);
-    } else {
-      const warnMsg = `[PR #${ref.prNumber}] Skipping ${login}: not a repo collaborator`;
+  for (const login of sorted) {
+    if (toRequest.length >= config.count) break;
+    try {
+      if (await prs.isCollaborator(ref, login)) {
+        toRequest.push(login);
+      } else {
+        const warnMsg = `[PR #${ref.prNumber}] Skipping ${login}: not a repo collaborator`;
+        if (log?.warn) { log.warn(warnMsg); } else { logger.warn(warnMsg); }
+      }
+    } catch (err) {
+      // Transient API error (rate limit, server error) — can't determine status for this candidate.
+      const msg = err instanceof Error ? err.message : String(err);
+      const warnMsg = `[PR #${ref.prNumber}] Could not verify collaborator status for ${login}: ${msg}`;
       if (log?.warn) { log.warn(warnMsg); } else { logger.warn(warnMsg); }
     }
   }
