@@ -858,6 +858,8 @@ export class PROperations {
    *
    * DISMISSED reviews are intentionally excluded: dismissal signals that a verdict no longer
    * applies, so a dismissed reviewer should remain eligible for re-request at the same head.
+   * Contrast with `getApproverLogins`, which intentionally includes DISMISSED so that a
+   * dismissed approval no longer counts toward merge-readiness.
    * Uses pagination to handle PRs with >100 reviews.
    */
   async getReviewersAtCurrentHead(ref: PRRef, headSha: string): Promise<Set<string>> {
