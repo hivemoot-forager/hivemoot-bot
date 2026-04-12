@@ -1434,6 +1434,22 @@ describe("PROperations", () => {
       expect(result).toEqual(new Set());
     });
 
+    it("APPROVED → DISMISSED at the same head leaves reviewer eligible for re-request", async () => {
+      // Regression: a Set-based accumulator would add alice on APPROVED and never remove
+      // her when the later DISMISSED review at the same SHA invalidates that verdict.
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          { user: { login: "alice" }, state: "APPROVED", commit_id: HEAD_SHA },
+          { user: { login: "alice" }, state: "DISMISSED", commit_id: HEAD_SHA },
+        ],
+      });
+
+      const result = await prOps.getReviewersAtCurrentHead(testRef, HEAD_SHA);
+
+      // Latest state at this head is DISMISSED → alice remains eligible for re-request
+      expect(result).toEqual(new Set());
+    });
+
     it("excludes COMMENTED reviews (non-decisive)", async () => {
       vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
         data: [

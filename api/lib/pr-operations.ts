@@ -863,8 +863,12 @@ export class PROperations {
    * Uses pagination to handle PRs with >100 reviews.
    */
   async getReviewersAtCurrentHead(ref: PRRef, headSha: string): Promise<Set<string>> {
+    // Track the latest decisive state per reviewer so that APPROVED → DISMISSED
+    // at the same head correctly marks the reviewer as eligible for re-request.
+    // DISMISSED intentionally excluded from the final result — see JSDoc above.
+    const TRACKED_STATES = new Set(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"]);
     const DECISIVE_STATES = new Set(["APPROVED", "CHANGES_REQUESTED"]);
-    const reviewersAtHead = new Set<string>();
+    const latestState = new Map<string, string>(); // login → latest tracked state at headSha
 
     let page = 1;
     const perPage = 100;
@@ -881,8 +885,8 @@ export class PROperations {
       if (reviews.length === 0) break;
 
       for (const review of reviews) {
-        if (review.user && DECISIVE_STATES.has(review.state) && review.commit_id === headSha) {
-          reviewersAtHead.add(review.user.login.toLowerCase());
+        if (review.user && TRACKED_STATES.has(review.state) && review.commit_id === headSha) {
+          latestState.set(review.user.login.toLowerCase(), review.state);
         }
       }
 
@@ -890,7 +894,11 @@ export class PROperations {
       page++;
     }
 
-    return reviewersAtHead;
+    return new Set(
+      [...latestState.entries()]
+        .filter(([, state]) => DECISIVE_STATES.has(state))
+        .map(([login]) => login),
+    );
   }
 
   /**
