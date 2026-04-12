@@ -258,6 +258,7 @@ describe("PROperations", () => {
         },
         repos: {
           getCombinedStatusForRef: vi.fn().mockResolvedValue({ data: { state: "pending", total_count: 0, statuses: [] } }),
+          getCollaboratorPermissionLevel: vi.fn().mockResolvedValue({ data: { permission: "write" } }),
         },
       },
     } as unknown as PRClient;
@@ -1568,6 +1569,39 @@ describe("PROperations", () => {
 
       expect(mockClient.rest.pulls.listReviews).toHaveBeenCalledTimes(2);
       expect(result).toEqual(new Set(["alice"]));
+    });
+  });
+
+  describe("isCollaborator", () => {
+    it("returns true when the API confirms collaborator status", async () => {
+      vi.mocked(mockClient.rest.repos.getCollaboratorPermissionLevel).mockResolvedValueOnce({
+        data: { permission: "write" },
+      });
+
+      const result = await prOps.isCollaborator(testRef, "alice");
+
+      expect(result).toBe(true);
+      expect(mockClient.rest.repos.getCollaboratorPermissionLevel).toHaveBeenCalledWith({
+        owner: testRef.owner,
+        repo: testRef.repo,
+        username: "alice",
+      });
+    });
+
+    it("returns false when the API responds with 404 (not a collaborator)", async () => {
+      const notFound = Object.assign(new Error("Not Found"), { status: 404 });
+      vi.mocked(mockClient.rest.repos.getCollaboratorPermissionLevel).mockRejectedValueOnce(notFound);
+
+      const result = await prOps.isCollaborator(testRef, "outsider");
+
+      expect(result).toBe(false);
+    });
+
+    it("re-throws non-404 errors so callers can distinguish transient failures", async () => {
+      const serverError = Object.assign(new Error("Server Error"), { status: 500 });
+      vi.mocked(mockClient.rest.repos.getCollaboratorPermissionLevel).mockRejectedValueOnce(serverError);
+
+      await expect(prOps.isCollaborator(testRef, "alice")).rejects.toThrow("Server Error");
     });
   });
 });
