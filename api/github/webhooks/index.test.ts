@@ -4,7 +4,7 @@ import { GovernanceService } from "../../lib/governance.js";
 import { createIssueOperations } from "../../lib/github-client.js";
 import { getLinkedIssues, getOpenPRsForIssue, disablePullRequestAutoMerge } from "../../lib/graphql-queries.js";
 import { processImplementationIntake, recalculateLeaderboardForPR } from "../../lib/implementation-intake.js";
-import { evaluateMergeReadiness, evaluateAutomerge, loadRepositoryConfig } from "../../lib/index.js";
+import { evaluateMergeReadiness, evaluateAutomerge, loadRepositoryConfig, rerequestBlockingReviewers } from "../../lib/index.js";
 import { LABELS, MESSAGES, REQUIRED_REPOSITORY_LABELS } from "../../config.js";
 import type { IssueRef } from "../../lib/types.js";
 import type { IncomingMessage, ServerResponse } from "http";
@@ -66,6 +66,7 @@ vi.mock("../../lib/index.js", async () => {
     }),
     evaluateMergeReadiness: vi.fn().mockResolvedValue(undefined),
     evaluateAutomerge: vi.fn().mockResolvedValue(undefined),
+    rerequestBlockingReviewers: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -1679,6 +1680,7 @@ describe("Queen Bot", () => {
       vi.mocked(recalculateLeaderboardForPR).mockReset();
       vi.mocked(evaluateMergeReadiness).mockReset();
       vi.mocked(evaluateAutomerge).mockReset();
+      vi.mocked(rerequestBlockingReviewers).mockReset();
       vi.mocked(getLinkedIssues).mockReset();
       vi.mocked(loadRepositoryConfig).mockReset();
     });
@@ -2098,6 +2100,100 @@ describe("Queen Bot", () => {
       expect(evaluateAutomerge).toHaveBeenCalledWith(
         expect.objectContaining({ draft: false, mergeable: false, graphql: expect.anything() })
       );
+    });
+
+    const rerequestEnabledConfig = {
+      governance: {
+        proposals: { discussion: { exits: [{ type: "manual" }], durationMs: 0 } },
+        pr: {
+          maxPRsPerIssue: 3,
+          trustedReviewers: ["alice"],
+          intake: {},
+          mergeReady: null,
+          automerge: null,
+          reviewRequests: { rerequestBlockers: true },
+        },
+      },
+    };
+
+    it("should call rerequestBlockingReviewers on check_suite.completed when rerequestBlockers is enabled", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(rerequestEnabledConfig as any);
+      vi.mocked(rerequestBlockingReviewers).mockResolvedValue(undefined);
+
+      const octokit = createPRGuardOctokit();
+      octokit.rest.issues.get = vi.fn().mockResolvedValue({ data: { labels: [] } });
+
+      await handlers.get("check_suite.completed")!({
+        octokit,
+        log: mkLog(),
+        payload: {
+          check_suite: { pull_requests: [{ number: 1 }], head_sha: "abc123" },
+          repository: testRepo,
+        },
+      });
+
+      expect(rerequestBlockingReviewers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ref: expect.objectContaining({ prNumber: 1 }),
+          prConfig: expect.objectContaining({ reviewRequests: { rerequestBlockers: true } }),
+        })
+      );
+    });
+
+    it("should call rerequestBlockingReviewers on check_run.completed when rerequestBlockers is enabled", async () => {
+      const { handlers } = createWebhookHarness();
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(rerequestEnabledConfig as any);
+      vi.mocked(rerequestBlockingReviewers).mockResolvedValue(undefined);
+
+      const octokit = createPRGuardOctokit();
+
+      await handlers.get("check_run.completed")!({
+        octokit,
+        log: mkLog(),
+        payload: {
+          check_run: { pull_requests: [{ number: 1 }], head_sha: "abc123" },
+          repository: testRepo,
+        },
+      });
+
+      expect(rerequestBlockingReviewers).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ref: expect.objectContaining({ prNumber: 1 }),
+          prConfig: expect.objectContaining({ reviewRequests: { rerequestBlockers: true } }),
+        })
+      );
+    });
+
+    it("should not call rerequestBlockingReviewers on check_suite.completed when reviewRequests is null", async () => {
+      const { handlers } = createWebhookHarness();
+      const configWithoutReviewRequests = {
+        governance: {
+          proposals: { discussion: { exits: [{ type: "manual" }], durationMs: 0 } },
+          pr: {
+            maxPRsPerIssue: 3,
+            trustedReviewers: ["alice"],
+            intake: {},
+            mergeReady: null,
+            automerge: null,
+            reviewRequests: null,
+          },
+        },
+      };
+      vi.mocked(loadRepositoryConfig).mockResolvedValue(configWithoutReviewRequests as any);
+
+      const octokit = createPRGuardOctokit();
+
+      await handlers.get("check_suite.completed")!({
+        octokit,
+        log: mkLog(),
+        payload: {
+          check_suite: { pull_requests: [{ number: 1 }], head_sha: "abc123" },
+          repository: testRepo,
+        },
+      });
+
+      expect(rerequestBlockingReviewers).not.toHaveBeenCalled();
     });
   });
 

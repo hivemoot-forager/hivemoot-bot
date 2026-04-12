@@ -1541,5 +1541,33 @@ describe("PROperations", () => {
       expect(mockClient.rest.pulls.listReviews).not.toHaveBeenCalled();
       expect(result).toEqual(new Set());
     });
+
+    it("should paginate through reviews when first page is full", async () => {
+      // First page: 100 reviews (all COMMENTED by non-trusted users, to hit the pagination path)
+      const firstPage = Array.from({ length: 100 }, (_, i) => ({
+        user: { login: `user${i}` },
+        state: "COMMENTED",
+        submitted_at: "2024-01-10T08:00:00Z",
+        commit_id: priorSha,
+      }));
+      // Second page: alice with CHANGES_REQUESTED
+      const secondPage = [
+        {
+          user: { login: "alice" },
+          state: "CHANGES_REQUESTED",
+          submitted_at: "2024-01-10T10:00:00Z",
+          commit_id: priorSha,
+        },
+      ];
+
+      vi.mocked(mockClient.rest.pulls.listReviews)
+        .mockResolvedValueOnce({ data: firstPage })
+        .mockResolvedValueOnce({ data: secondPage });
+
+      const result = await prOps.getBlockingReviewers(testRef, headSha, trustedReviewers);
+
+      expect(mockClient.rest.pulls.listReviews).toHaveBeenCalledTimes(2);
+      expect(result).toEqual(new Set(["alice"]));
+    });
   });
 });
