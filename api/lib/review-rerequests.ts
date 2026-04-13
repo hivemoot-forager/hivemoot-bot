@@ -22,7 +22,7 @@ import type { PRRef } from "./types.js";
 import type { PROperations } from "./pr-operations.js";
 import type { PRConfig } from "./repo-config.js";
 import { isCIPassing } from "./merge-readiness.js";
-import { LABELS, isLabelMatch } from "../config.js";
+import { LABELS } from "../config.js";
 
 export interface RerequestBlockersParams {
   prs: PROperations;
@@ -70,7 +70,7 @@ export async function rerequestBlockingReviewers(
 
   // 5. Candidate check — only act on hivemoot:candidate PRs
   const isCandidate = pr.labels.some((label) =>
-    isLabelMatch(label, LABELS.IMPLEMENTATION)
+    label === LABELS.IMPLEMENTATION
   );
   if (!isCandidate) return;
 
