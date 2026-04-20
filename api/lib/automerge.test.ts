@@ -16,6 +16,18 @@ function makeAutoMergeNotEnabledError(): GraphqlResponseError<null> {
   );
 }
 
+/** Build a GraphqlResponseError matching what GitHub returns when branch protection rules are not configured. */
+function makeAutoMergeNotAllowedError(): GraphqlResponseError<null> {
+  return new GraphqlResponseError(
+    { url: "https://api.github.com/graphql" },
+    {},
+    {
+      data: null,
+      errors: [{ message: "Auto merge is not allowed for this repository.", type: "FORBIDDEN" }],
+    }
+  );
+}
+
 // ───────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ───────────────────────────────────────────────────────────────────────────────
@@ -936,7 +948,7 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     const config = makeConfig({ dryRun: false });
     const prs = makeEligiblePROperations();
     const mockGraphQL = {
-      graphql: vi.fn().mockRejectedValue(new Error("PullRequestAutoMergeNotAllowed")),
+      graphql: vi.fn().mockRejectedValue(makeAutoMergeNotAllowedError()),
     };
     const warnLog = vi.fn();
 
@@ -956,9 +968,13 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
     expect(warnLog).toHaveBeenCalledWith(
       expect.stringContaining("Failed to enable GitHub auto-merge")
     );
+    // The branch-protection hint must be present for the NotAllowed error
+    expect(warnLog).toHaveBeenCalledWith(
+      expect.stringContaining("branch protection")
+    );
   });
 
-  it("includes branch protection hint only for PullRequestAutoMergeNotAllowed", async () => {
+  it("includes branch protection hint only for PullRequestAutoMergeNotAllowed (GraphqlResponseError FORBIDDEN)", async () => {
     const config = makeConfig({ dryRun: false });
     const prs = makeEligiblePROperations();
     const warnLog = vi.fn();
@@ -978,6 +994,33 @@ describe("evaluateAutomerge — Phase 2 (dryRun: false)", () => {
       mergeable: true,
     });
 
+    expect(warnLog).toHaveBeenCalledWith(
+      expect.not.stringContaining("branch protection")
+    );
+  });
+
+  it("does not include branch protection hint for a plain Error with old string sentinel", async () => {
+    // The old automerge.ts check used msg.includes("PullRequestAutoMergeNotAllowed"),
+    // which matched plain Errors used in tests but not real GraphqlResponseErrors from GitHub.
+    // isAutoMergeNotAllowedError() requires a GraphqlResponseError with FORBIDDEN type.
+    const config = makeConfig({ dryRun: false });
+    const prs = makeEligiblePROperations();
+    const warnLog = vi.fn();
+    const mockGraphQL = {
+      graphql: vi.fn().mockRejectedValue(new Error("PullRequestAutoMergeNotAllowed")),
+    };
+
+    await evaluateAutomerge({
+      prs,
+      ref: baseRef,
+      config,
+      trustedReviewers,
+      graphql: mockGraphQL,
+      log: { info: vi.fn(), warn: warnLog },
+      mergeable: true,
+    });
+
+    // Plain Errors don't get the hint — only real GraphqlResponseErrors with FORBIDDEN type do
     expect(warnLog).toHaveBeenCalledWith(
       expect.not.stringContaining("branch protection")
     );

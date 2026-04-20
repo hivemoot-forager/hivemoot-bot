@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { GraphqlResponseError } from "@octokit/graphql";
-import { isTransientError, isAutoMergeNotEnabledError, TRANSIENT_NETWORK_CODES } from "./transient-error.js";
+import { isTransientError, isAutoMergeNotEnabledError, isAutoMergeNotAllowedError, TRANSIENT_NETWORK_CODES } from "./transient-error.js";
 
 describe("isTransientError", () => {
   describe("network codes", () => {
@@ -142,5 +142,64 @@ describe("isAutoMergeNotEnabledError", () => {
       errors: [{ message: "Not Found", type: "NOT_FOUND" }],
     });
     expect(isAutoMergeNotEnabledError(foreignError)).toBe(false);
+  });
+});
+
+describe("isAutoMergeNotAllowedError", () => {
+  function makeNotAllowedError(): GraphqlResponseError<null> {
+    return new GraphqlResponseError(
+      { url: "https://api.github.com/graphql" },
+      {},
+      {
+        data: null,
+        errors: [{ message: "Auto merge is not allowed for this repository.", type: "FORBIDDEN" }],
+      }
+    );
+  }
+
+  it("returns true for a GraphqlResponseError with FORBIDDEN type", () => {
+    expect(isAutoMergeNotAllowedError(makeNotAllowedError())).toBe(true);
+  });
+
+  it("returns false for a plain Error with the old string sentinel", () => {
+    // The old string-match check in automerge.ts would have passed this plain Error
+    // (because .message === "PullRequestAutoMergeNotAllowed"), but real GitHub errors
+    // are GraphqlResponseError — not plain Errors.
+    expect(isAutoMergeNotAllowedError(new Error("PullRequestAutoMergeNotAllowed"))).toBe(false);
+  });
+
+  it("returns false for a GraphqlResponseError with a different type", () => {
+    const err = new GraphqlResponseError(
+      { url: "https://api.github.com/graphql" },
+      {},
+      { data: null, errors: [{ message: "Something else.", type: "UNPROCESSABLE" }] }
+    );
+    expect(isAutoMergeNotAllowedError(err)).toBe(false);
+  });
+
+  it("returns false for null", () => {
+    expect(isAutoMergeNotAllowedError(null)).toBe(false);
+  });
+
+  it("returns false for a plain object without name", () => {
+    expect(isAutoMergeNotAllowedError({ message: "PullRequestAutoMergeNotAllowed" })).toBe(false);
+  });
+
+  it("returns true for a cross-version instance (duck-typed, not instanceof)", () => {
+    // Simulates GraphqlResponseError thrown by octokit's bundled @octokit/graphql 9.x
+    // when the root install is 7.x — instanceof would fail, but duck-typing works.
+    const foreignError = Object.assign(new Error("Request failed due to following response errors"), {
+      name: "GraphqlResponseError",
+      errors: [{ message: "Auto merge is not allowed for this repository.", type: "FORBIDDEN" }],
+    });
+    expect(isAutoMergeNotAllowedError(foreignError)).toBe(true);
+  });
+
+  it("returns false for a cross-version instance with a non-FORBIDDEN type", () => {
+    const foreignError = Object.assign(new Error("Request failed"), {
+      name: "GraphqlResponseError",
+      errors: [{ message: "Not Found", type: "NOT_FOUND" }],
+    });
+    expect(isAutoMergeNotAllowedError(foreignError)).toBe(false);
   });
 });
