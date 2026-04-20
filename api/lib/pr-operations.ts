@@ -911,6 +911,10 @@ export class PROperations {
       { state: string; commitId: string | undefined; submittedAt: Date }
     >();
 
+    // Reviewers who already engaged with the current head are not re-requested
+    // even if they blocked a prior version — they've already seen this code.
+    const reviewedCurrentHead = new Set<string>();
+
     let page = 1;
     const perPage = 100;
 
@@ -929,6 +933,11 @@ export class PROperations {
         if (!review.user) continue;
         const login = review.user.login.toLowerCase();
         if (!trusted.has(login)) continue;
+
+        if (review.commit_id === headSha && review.state !== "PENDING") {
+          reviewedCurrentHead.add(login);
+        }
+
         // Only track APPROVED and CHANGES_REQUESTED; skip COMMENTED, DISMISSED, PENDING
         if (review.state !== "APPROVED" && review.state !== "CHANGES_REQUESTED") continue;
 
@@ -944,10 +953,14 @@ export class PROperations {
     }
 
     // A reviewer is "blocking" if their latest decisive review is CHANGES_REQUESTED
-    // on a commit other than the current head — they blocked a prior version.
+    // on a prior head, and they have not already reviewed the current head.
     const blocking = new Set<string>();
     for (const [login, { state, commitId }] of latestReview) {
-      if (state === "CHANGES_REQUESTED" && commitId !== headSha) {
+      if (
+        state === "CHANGES_REQUESTED" &&
+        commitId !== headSha &&
+        !reviewedCurrentHead.has(login)
+      ) {
         blocking.add(login);
       }
     }

@@ -1543,6 +1543,30 @@ describe("PROperations", () => {
       expect(result).toEqual(new Set());
     });
 
+    it("should NOT re-request reviewer who already left COMMENTED review on current head", async () => {
+      vi.mocked(mockClient.rest.pulls.listReviews).mockResolvedValue({
+        data: [
+          {
+            user: { login: "alice" },
+            state: "CHANGES_REQUESTED",
+            submitted_at: "2024-01-10T08:00:00Z",
+            commit_id: priorSha,
+          },
+          {
+            user: { login: "alice" },
+            state: "COMMENTED",
+            submitted_at: "2024-01-10T10:00:00Z",
+            commit_id: headSha,
+          },
+        ],
+      });
+
+      const result = await prOps.getBlockingReviewers(testRef, headSha, trustedReviewers);
+
+      // Alice already reviewed the current head; do not re-request her
+      expect(result).toEqual(new Set());
+    });
+
     it("should paginate through reviews when first page is full", async () => {
       // First page: 100 reviews (all COMMENTED by non-trusted users, to hit the pagination path)
       const firstPage = Array.from({ length: 100 }, (_, i) => ({
