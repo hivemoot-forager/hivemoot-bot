@@ -70,6 +70,7 @@ import {
   processRepository,
   reconcileMissingVotingComments,
   reconcileUnlabeledIssues,
+  reconcileManualDecisionIssues,
 } from "./close-discussions.js";
 import type { EarlyDecisionDeps, DiscussionEarlyCheckDeps } from "./close-discussions.js";
 import { getOpenPRsForIssue, logger, loadRepositoryConfig, createIssueOperations, createGovernanceService } from "../api/lib/index.js";
@@ -483,6 +484,240 @@ describe("close-discussions script", () => {
       );
       expect(mockGovernance.startDiscussion).not.toHaveBeenCalledWith(
         expect.objectContaining({ issueNumber: 20 })
+      );
+    });
+  });
+
+  describe("reconcileManualDecisionIssues", () => {
+    const owner = "test-org";
+    const repoName = "test-repo";
+
+    function makeIssueOps(overrides: Partial<{
+      findVotingCommentId: ReturnType<typeof vi.fn>;
+      getValidatedVoteCounts: ReturnType<typeof vi.fn>;
+      addLabels: ReturnType<typeof vi.fn>;
+      removeLabel: ReturnType<typeof vi.fn>;
+    }> = {}) {
+      return {
+        findVotingCommentId: vi.fn().mockResolvedValue(42),
+        getValidatedVoteCounts: vi.fn().mockResolvedValue({
+          votes: { thumbsUp: 3, thumbsDown: 1, confused: 0, eyes: 0 },
+          voters: ["a", "b", "c"],
+          participants: ["a", "b", "c"],
+        }),
+        addLabels: vi.fn().mockResolvedValue(undefined),
+        removeLabel: vi.fn().mockResolvedValue(undefined),
+        ...overrides,
+      } as any;
+    }
+
+    it("applies awaiting-decision and removes voting label for thumbsUp majority", async () => {
+      const mockIssues = makeIssueOps();
+      const fakeOctokit = {
+        rest: { issues: { listForRepo: vi.fn() } },
+        paginate: {
+          iterator: vi.fn().mockReturnValue(
+            buildIterator([[{ number: 10, labels: [{ name: "hivemoot:voting" }] }]])
+          ),
+        },
+      } as any;
+
+      const count = await reconcileManualDecisionIssues(fakeOctokit, owner, repoName, mockIssues);
+
+      expect(count).toBe(1);
+      expect(mockIssues.addLabels).toHaveBeenCalledWith(
+        expect.objectContaining({ issueNumber: 10 }),
+        ["hivemoot:awaiting-decision"],
+      );
+      expect(mockIssues.removeLabel).toHaveBeenCalledWith(
+        expect.objectContaining({ issueNumber: 10 }),
+        "hivemoot:voting",
+      );
+    });
+
+    it("applies awaiting-decision for thumbsDown majority (rejected outcome)", async () => {
+      const mockIssues = makeIssueOps({
+        getValidatedVoteCounts: vi.fn().mockResolvedValue({
+          votes: { thumbsUp: 1, thumbsDown: 4, confused: 0, eyes: 0 },
+          voters: ["a", "b", "c", "d"],
+          participants: ["a", "b", "c", "d"],
+        }),
+      });
+      const fakeOctokit = {
+        rest: { issues: { listForRepo: vi.fn() } },
+        paginate: {
+          iterator: vi.fn().mockReturnValue(
+            buildIterator([[{ number: 11, labels: [{ name: "hivemoot:voting" }] }]])
+          ),
+        },
+      } as any;
+
+      const count = await reconcileManualDecisionIssues(fakeOctokit, owner, repoName, mockIssues);
+      expect(count).toBe(1);
+      expect(mockIssues.addLabels).toHaveBeenCalledWith(
+        expect.objectContaining({ issueNumber: 11 }),
+        ["hivemoot:awaiting-decision"],
+      );
+    });
+
+    it("skips tied votes (inconclusive)", async () => {
+      const mockIssues = makeIssueOps({
+        getValidatedVoteCounts: vi.fn().mockResolvedValue({
+          votes: { thumbsUp: 2, thumbsDown: 2, confused: 0, eyes: 0 },
+          voters: ["a", "b", "c", "d"],
+          participants: ["a", "b", "c", "d"],
+        }),
+      });
+      const fakeOctokit = {
+        rest: { issues: { listForRepo: vi.fn() } },
+        paginate: {
+          iterator: vi.fn().mockReturnValue(
+            buildIterator([[{ number: 12, labels: [{ name: "hivemoot:voting" }] }]])
+          ),
+        },
+      } as any;
+
+      const count = await reconcileManualDecisionIssues(fakeOctokit, owner, repoName, mockIssues);
+      expect(count).toBe(0);
+      expect(mockIssues.addLabels).not.toHaveBeenCalled();
+    });
+
+    it("skips issues with no voting comment", async () => {
+      const mockIssues = makeIssueOps({
+        findVotingCommentId: vi.fn().mockResolvedValue(null),
+      });
+      const fakeOctokit = {
+        rest: { issues: { listForRepo: vi.fn() } },
+        paginate: {
+          iterator: vi.fn().mockReturnValue(
+            buildIterator([[{ number: 13, labels: [{ name: "hivemoot:voting" }] }]])
+          ),
+        },
+      } as any;
+
+      const count = await reconcileManualDecisionIssues(fakeOctokit, owner, repoName, mockIssues);
+      expect(count).toBe(0);
+      expect(mockIssues.addLabels).not.toHaveBeenCalled();
+    });
+
+    it("skips issues already carrying awaiting-decision (idempotent) but retries phase-label removal", async () => {
+      const mockIssues = makeIssueOps();
+      const fakeOctokit = {
+        rest: { issues: { listForRepo: vi.fn() } },
+        paginate: {
+          iterator: vi.fn().mockReturnValue(
+            buildIterator([[{
+              number: 14,
+              labels: [
+                { name: "hivemoot:voting" },
+                { name: "hivemoot:awaiting-decision" },
+              ],
+            }]])
+          ),
+        },
+      } as any;
+
+      const count = await reconcileManualDecisionIssues(fakeOctokit, owner, repoName, mockIssues);
+      expect(count).toBe(0); // Not re-labeled
+      expect(mockIssues.addLabels).not.toHaveBeenCalled();
+      // But removeLabel is still called to retry phase-label cleanup
+      expect(mockIssues.removeLabel).toHaveBeenCalledWith(
+        expect.objectContaining({ issueNumber: 14 }),
+        "hivemoot:voting",
+      );
+    });
+
+    it("handles extended-voting phase issues too", async () => {
+      const mockIssues = makeIssueOps();
+      const emptyPage = buildIterator([[]]);
+      const extendedPage = buildIterator([[{
+        number: 15,
+        labels: [{ name: "hivemoot:extended-voting" }],
+      }]]);
+      // getLabelQueryAliases returns 2 aliases for each of voting + extended-voting = 4 calls
+      const fakeOctokit = {
+        rest: { issues: { listForRepo: vi.fn() } },
+        paginate: {
+          iterator: vi.fn()
+            .mockReturnValueOnce(emptyPage)    // hivemoot:voting
+            .mockReturnValueOnce(emptyPage)    // phase:voting (legacy alias)
+            .mockReturnValueOnce(extendedPage) // hivemoot:extended-voting
+            .mockReturnValue(emptyPage),       // phase:extended-voting (legacy alias)
+        },
+      } as any;
+
+      const count = await reconcileManualDecisionIssues(fakeOctokit, owner, repoName, mockIssues);
+      expect(count).toBe(1);
+      expect(mockIssues.removeLabel).toHaveBeenCalledWith(
+        expect.objectContaining({ issueNumber: 15 }),
+        "hivemoot:extended-voting",
+      );
+    });
+
+    it("swallows 404 on phase-label removal without logging a warning", async () => {
+      const removeError = Object.assign(new Error("not found"), { status: 404 });
+      const mockIssues = makeIssueOps({
+        removeLabel: vi.fn().mockRejectedValue(removeError),
+      });
+      const fakeOctokit = {
+        rest: { issues: { listForRepo: vi.fn() } },
+        paginate: {
+          iterator: vi.fn().mockReturnValue(
+            buildIterator([[{ number: 16, labels: [{ name: "hivemoot:voting" }] }]])
+          ),
+        },
+      } as any;
+
+      const count = await reconcileManualDecisionIssues(fakeOctokit, owner, repoName, mockIssues);
+      expect(count).toBe(1); // Label was added
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining("#16"),
+      );
+    });
+
+    it("skips pull requests", async () => {
+      const mockIssues = makeIssueOps();
+      const fakeOctokit = {
+        rest: { issues: { listForRepo: vi.fn() } },
+        paginate: {
+          iterator: vi.fn().mockReturnValue(
+            buildIterator([[
+              { number: 17, labels: [{ name: "hivemoot:voting" }] },
+              { number: 18, labels: [{ name: "hivemoot:voting" }], pull_request: {} },
+            ]])
+          ),
+        },
+      } as any;
+
+      const count = await reconcileManualDecisionIssues(fakeOctokit, owner, repoName, mockIssues);
+      expect(count).toBe(1);
+      expect(mockIssues.findVotingCommentId).not.toHaveBeenCalledWith(
+        expect.objectContaining({ issueNumber: 18 })
+      );
+    });
+
+    it("survives per-issue errors and continues", async () => {
+      const mockIssues = makeIssueOps({
+        findVotingCommentId: vi.fn()
+          .mockRejectedValueOnce(new Error("API error"))
+          .mockResolvedValueOnce(42),
+      });
+      const fakeOctokit = {
+        rest: { issues: { listForRepo: vi.fn() } },
+        paginate: {
+          iterator: vi.fn().mockReturnValue(
+            buildIterator([[
+              { number: 19, labels: [{ name: "hivemoot:voting" }] },
+              { number: 20, labels: [{ name: "hivemoot:voting" }] },
+            ]])
+          ),
+        },
+      } as any;
+
+      const count = await reconcileManualDecisionIssues(fakeOctokit, owner, repoName, mockIssues);
+      expect(count).toBe(1); // Only #20 succeeded
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to process #19"),
       );
     });
   });

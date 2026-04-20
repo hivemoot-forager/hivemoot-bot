@@ -15,6 +15,7 @@ import {
   evaluateMergeReadiness,
   evaluateAutomerge,
 } from "../../lib/index.js";
+import type { IssueRef } from "../../lib/index.js";
 import {
   getLinkedIssues,
   disablePullRequestAutoMerge,
@@ -1141,29 +1142,61 @@ export function app(probotApp: Probot): void {
    */
   probotApp.on("issues.labeled", async (context) => {
     const { label, issue, sender } = context.payload;
-    if (!isLabelMatch(label?.name, LABELS.VOTING)) return;
-    if (sender.type === "Bot") return;
-
     const { owner, repo, fullName } = getRepoContext(context.payload.repository);
-    context.log.info(
-      `Manual voting label on issue #${issue.number} in ${fullName} (by ${sender.login})`,
-    );
 
-    try {
-      const appId = getAppId();
-      const issues = createIssueOperations(context.octokit, { appId });
-      const governance = createGovernanceService(issues);
-      const installationId = context.payload.installation?.id;
-      const result = await governance.postVotingComment({
-        owner, repo, issueNumber: issue.number, installationId,
-      });
-      context.log.info(`Voting comment for issue #${issue.number}: ${result}`);
-    } catch (error) {
-      context.log.error(
-        { err: error, issue: issue.number, repo: fullName },
-        "Failed to post voting comment for manually labeled issue",
+    // When a human manually applies the voting label, post the voting comment.
+    if (isLabelMatch(label?.name, LABELS.VOTING) && sender.type !== "Bot") {
+      context.log.info(
+        `Manual voting label on issue #${issue.number} in ${fullName} (by ${sender.login})`,
       );
-      throw error;
+      try {
+        const appId = getAppId();
+        const issues = createIssueOperations(context.octokit, { appId });
+        const governance = createGovernanceService(issues);
+        const installationId = context.payload.installation?.id;
+        const result = await governance.postVotingComment({
+          owner, repo, issueNumber: issue.number, installationId,
+        });
+        context.log.info(`Voting comment for issue #${issue.number}: ${result}`);
+      } catch (error) {
+        context.log.error(
+          { err: error, issue: issue.number, repo: fullName },
+          "Failed to post voting comment for manually labeled issue",
+        );
+        throw error;
+      }
+    }
+
+    // When a terminal governance label lands on an issue that still carries
+    // hivemoot:awaiting-decision, clear it. This handles both manual maintainer
+    // label-swaps and bot-driven transitions.
+    const terminalLabels = [
+      LABELS.READY_TO_IMPLEMENT,
+      LABELS.REJECTED,
+      LABELS.NEEDS_HUMAN,
+      LABELS.INCONCLUSIVE,
+    ];
+    if (terminalLabels.some(l => isLabelMatch(label?.name, l))) {
+      const hasAwaitingDecision = (issue.labels ?? []).some(
+        (l) => isLabelMatch(l.name, LABELS.AWAITING_DECISION),
+      );
+      if (hasAwaitingDecision) {
+        context.log.info(
+          `Clearing awaiting-decision from issue #${issue.number} in ${fullName} (terminal label: ${label?.name})`,
+        );
+        try {
+          const appId = getAppId();
+          const issues = createIssueOperations(context.octokit, { appId });
+          const installationId = context.payload.installation?.id;
+          const ref: IssueRef = { owner, repo, issueNumber: issue.number, installationId };
+          await issues.removeLabel(ref, LABELS.AWAITING_DECISION);
+        } catch (error) {
+          context.log.warn(
+            { err: error, issue: issue.number, repo: fullName },
+            "Failed to clear awaiting-decision label",
+          );
+        }
+      }
     }
   });
 }

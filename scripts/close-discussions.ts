@@ -668,6 +668,94 @@ export async function reconcileUnlabeledIssues(
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
+// Manual Decision Signal
+// ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * For repos with manual voting exits: find voting-phase issues with a decisive
+ * 👍/👎 outcome and apply `hivemoot:awaiting-decision` so maintainers can filter
+ * for issues that need a governance call.
+ *
+ * Does not transition the issue — the phase label stays until the maintainer
+ * acts. Idempotent: re-running skips issues that already carry the label and
+ * retries phase-label cleanup for issues in a partial swap state.
+ *
+ * @returns Number of issues newly labeled (excludes retry-only runs)
+ */
+export async function reconcileManualDecisionIssues(
+  octokit: InstanceType<typeof Octokit>,
+  owner: string,
+  repoName: string,
+  issues: IssueOperations,
+  installationId?: number,
+): Promise<number> {
+  let labeled = 0;
+  const seen = new Set<number>();
+
+  for (const phaseLabel of [LABELS.VOTING, LABELS.EXTENDED_VOTING]) {
+    for (const alias of getLabelQueryAliases(phaseLabel)) {
+      const iterator = octokit.paginate.iterator(
+        octokit.rest.issues.listForRepo,
+        { owner, repo: repoName, state: "open", labels: alias, per_page: 100 },
+      );
+
+      for await (const { data: page } of iterator) {
+        for (const issue of page as Issue[]) {
+          if ('pull_request' in issue) continue;
+          if (seen.has(issue.number)) continue;
+          seen.add(issue.number);
+
+          const currentLabels = issue.labels.map((l) => l.name);
+          const hasAwaitingDecision = currentLabels.includes(LABELS.AWAITING_DECISION);
+
+          const ref = createIssueRef(owner, repoName, issue.number, installationId);
+
+          try {
+            const commentId = await issues.findVotingCommentId(ref);
+            if (!commentId) {
+              logger.debug(`[${owner}/${repoName}] No voting comment on #${issue.number}; skipping`);
+              continue;
+            }
+
+            const validated = await issues.getValidatedVoteCounts(ref, commentId);
+            const { thumbsUp, thumbsDown } = validated.votes;
+
+            const isReadyOrRejected = thumbsUp > thumbsDown || thumbsDown > thumbsUp;
+            if (!isReadyOrRejected) {
+              continue;
+            }
+
+            if (!hasAwaitingDecision) {
+              await issues.addLabels(ref, [LABELS.AWAITING_DECISION]);
+              logger.info(`[${owner}/${repoName}] Applied awaiting-decision to #${issue.number}`);
+              labeled++;
+            }
+
+            // Remove the phase label (or retry if prior removal failed)
+            try {
+              await issues.removeLabel(ref, phaseLabel);
+            } catch (err) {
+              const status = (err as { status?: number }).status;
+              if (status !== 404) {
+                logger.warn(
+                  `[${owner}/${repoName}] Failed to remove ${phaseLabel} from #${issue.number}: ${(err as Error).message}`,
+                );
+              }
+            }
+          } catch (error) {
+            logger.warn(
+              `[${owner}/${repoName}] Failed to process #${issue.number}: ${(error as Error).message}`,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  return labeled;
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
 // Repository Processing
 // ───────────────────────────────────────────────────────────────────────────────
 
@@ -804,6 +892,24 @@ export async function processRepository(
     } catch (error) {
       logger.warn(
         `[${repo.full_name}] Unlabeled issue reconciliation failed: ${(error as Error).message}. Continuing with phase transitions.`,
+      );
+    }
+
+    // ── Manual decision signal (runs for all repos, including manual-only) ──
+    try {
+      const labeled = await reconcileManualDecisionIssues(
+        octokit,
+        owner,
+        repoName,
+        issues,
+        installationId,
+      );
+      if (labeled > 0) {
+        logger.info(`[${repo.full_name}] Applied awaiting-decision to ${labeled} issue(s)`);
+      }
+    } catch (error) {
+      logger.warn(
+        `[${repo.full_name}] Manual decision reconciliation failed: ${(error as Error).message}. Continuing.`,
       );
     }
 
