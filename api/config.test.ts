@@ -291,6 +291,12 @@ describe("config", () => {
       expect(message).toContain(config.SIGNATURE);
     });
 
+    it("should include the multi-reaction disqualification warning", async () => {
+      const config = await import("./config.js");
+      const message = config.MESSAGES.votingStart();
+      expect(message).toContain("react once — multiple reactions = no vote");
+    });
+
     it("should include HIGH PRIORITY header and reminder for high priority", async () => {
       const config = await import("./config.js");
 
