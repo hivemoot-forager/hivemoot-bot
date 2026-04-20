@@ -27,6 +27,67 @@ See [docs/WORKFLOWS.md](docs/WORKFLOWS.md) for the full workflow reference.
 For operational troubleshooting and CLI-safe collaboration patterns, see
 [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
+## Quick Start
+
+From zero to "bot replied to my first issue" in four steps.
+
+**Prerequisites:** a GitHub account, a [Vercel](https://vercel.com) account (free tier works), and Node.js 22+ for local development.
+
+### 1. Create a GitHub App
+
+Go to **GitHub Settings → Developer settings → GitHub Apps → New GitHub App** and configure:
+
+- **Homepage URL:** your Vercel deployment URL (fill in after step 2, or use a placeholder)
+- **Webhook URL:** `https://<your-vercel-deployment>/api/github/webhooks`
+- **Webhook secret:** generate a random string (e.g. `openssl rand -hex 20`) — save it for step 2
+- **Permissions:** Issues (Read & Write), Pull requests (Read & Write), Contents (Read & Write), Discussions (Read & Write), Checks (Read), Commit statuses (Read), Metadata (Read)
+- **Events:** Issues, Issue comments, Pull requests, Pull request reviews, Check suites, Check runs, Statuses, Installation, Installation repositories
+
+After saving, note the **App ID** and generate a **Private key** (PEM file) — you'll need both in step 2.
+
+### 2. Deploy to Vercel
+
+Fork or clone this repo, import it into Vercel, and set these environment variables:
+
+| Variable | Value |
+|---|---|
+| `APP_ID` | Your GitHub App ID (numeric) |
+| `APP_PRIVATE_KEY` | Contents of the PEM private key file |
+| `WEBHOOK_SECRET` | The webhook secret from step 1 |
+
+The `vercel.json` at the repo root handles routing. No additional build config needed.
+
+### 3. Add `.github/hivemoot.yml` to your target repo
+
+Create this file in the repository you want the Queen to manage:
+
+```yaml
+version: 1
+governance:
+  proposals:
+    discussion:
+      exits:
+        - type: manual
+    voting:
+      exits:
+        - type: manual
+```
+
+This is the minimal config. All phases are manual by default — no auto-transitions until you opt in. See [Configuration](#configuration) for the full reference.
+
+### 4. Install the GitHub App
+
+Go to your GitHub App's settings page → **Install App** → select the target repository.
+
+**Verify:** open a new issue in the repository. Within seconds you should see:
+
+- The `hivemoot:discussion` label added
+- A bot welcome comment from the Queen
+
+If it doesn't respond, check [Troubleshooting First Run](#troubleshooting-first-run).
+
+---
+
 ## Governance Workflow
 
 ### Issue Lifecycle
