@@ -725,6 +725,83 @@ describe("Queen Bot", () => {
         expect.stringContaining("Failed to post voting comment"),
       );
     });
+
+    it("should clear awaiting-decision when a terminal label is applied", async () => {
+      const { handlers } = createWebhookHarness();
+      const handler = handlers.get("issues.labeled")!;
+      const mockOctokit = createLabeledMockOctokit();
+      const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+      await handler({
+        payload: {
+          label: { name: LABELS.READY_TO_IMPLEMENT },
+          issue: {
+            number: 55,
+            labels: [
+              { name: LABELS.AWAITING_DECISION },
+              { name: LABELS.READY_TO_IMPLEMENT },
+            ],
+          },
+          sender: { type: "User", login: "maintainer" },
+          repository: { name: "sandbox", full_name: "hivemoot/sandbox", owner: { login: "hivemoot" } },
+        },
+        octokit: mockOctokit,
+        log,
+      });
+
+      expect(mockOctokit.rest.issues.removeLabel).toHaveBeenCalledWith(
+        expect.objectContaining({ issue_number: 55, name: LABELS.AWAITING_DECISION }),
+      );
+    });
+
+    it("should not clear awaiting-decision for a terminal label when it is not present", async () => {
+      const { handlers } = createWebhookHarness();
+      const handler = handlers.get("issues.labeled")!;
+      const mockOctokit = createLabeledMockOctokit();
+
+      await handler({
+        payload: {
+          label: { name: LABELS.READY_TO_IMPLEMENT },
+          issue: {
+            number: 56,
+            labels: [{ name: LABELS.READY_TO_IMPLEMENT }],
+          },
+          sender: { type: "User", login: "maintainer" },
+          repository: { name: "sandbox", full_name: "hivemoot/sandbox", owner: { login: "hivemoot" } },
+        },
+        octokit: mockOctokit,
+        log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      });
+
+      expect(mockOctokit.rest.issues.removeLabel).not.toHaveBeenCalled();
+    });
+
+    it("should warn but not throw when awaiting-decision removal fails", async () => {
+      const { handlers } = createWebhookHarness();
+      const handler = handlers.get("issues.labeled")!;
+      const mockOctokit = createLabeledMockOctokit();
+      mockOctokit.rest.issues.removeLabel.mockRejectedValue(new Error("API error"));
+      const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+      await handler({
+        payload: {
+          label: { name: LABELS.REJECTED },
+          issue: {
+            number: 57,
+            labels: [{ name: LABELS.AWAITING_DECISION }],
+          },
+          sender: { type: "Bot", login: "hivemoot[bot]" },
+          repository: { name: "sandbox", full_name: "hivemoot/sandbox", owner: { login: "hivemoot" } },
+        },
+        octokit: mockOctokit,
+        log,
+      });
+
+      expect(log.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ issue: 57 }),
+        expect.stringContaining("Failed to clear awaiting-decision label"),
+      );
+    });
   });
 
   describe("issue_comment.created command dispatch", () => {
