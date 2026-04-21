@@ -96,7 +96,7 @@ Votes are counted on the Queen's voting comment. Outcomes are evaluated in prior
 |---|---|---|
 | 👀 | Needs human input — open with `hivemoot:needs-human` | 👀 > 👍 + 👎 + 😕 |
 | 😕 | Needs more discussion — returns to discussion phase | 😕 > 👍 + 👎 |
-| 👍 | Ready to implement — locked for implementation | 👍 > 👎 |
+| 👍 | Ready to implement — open and unlocked for implementation | 👍 > 👎 |
 | 👎 | Rejected — issue closed and locked | 👎 > 👍 |
 | (tie) | Inconclusive — enters extended voting | 👍 = 👎 |
 

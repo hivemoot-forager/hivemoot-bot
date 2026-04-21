@@ -13,7 +13,7 @@ Issues go through a timed governance lifecycle with community voting.
 └─────────────┘                 └─────────────┘                 └─────────────┘
      │                               │                               │
      ▼                               ▼                               ▼
- • "hivemoot:discussion"         • "hivemoot:voting"           • "hivemoot:ready-to-implement" → locked
+ • "hivemoot:discussion"         • "hivemoot:voting"           • "hivemoot:ready-to-implement" → open, unlocked
    label added                     label added                 • "hivemoot:rejected" → closed & locked
  • Welcome comment               • Voting comment              • "hivemoot:extended-voting" → extended voting
    posted                          posted                            │
@@ -49,7 +49,7 @@ Scheduled transitions are controlled per phase via `exits[].type`:
 **Outcome** — signals are evaluated in priority order:
 - **Needs human input:** 👀 > (👍 + 👎 + 😕) combined — issue stays open with `hivemoot:needs-human`
 - **Needs more discussion:** 😕 > (👍 + 👎) combined — issue returns to discussion phase
-- **Ready to implement:** 👍 > 👎 — issue stays open for implementation, locked
+- **Ready to implement:** 👍 > 👎 — issue stays open for implementation, unlocked
 - **Rejected:** 👎 > 👍 — issue is closed and locked
 - **Inconclusive:** 👍 = 👎 (including 0-0) — enters extended voting round (`hivemoot:extended-voting`)
 
